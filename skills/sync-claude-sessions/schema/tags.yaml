@@ -1,0 +1,101 @@
+# Claude Session Tags Schema
+# Agent reads this file for valid tags and auto-detection keywords
+# Location: ~/.claude/skills/sync-claude-sessions/schema/tags.yaml
+
+tags:
+  # === Type of Work ===
+
+  research:
+    description: "Deep investigation of specific topics, gathering information, and exploring solutions."
+    keywords:
+      - "figure out"
+      - "research"
+      - "explore"
+      - "find information"
+      - "how to"
+
+  implementation:
+    description: "Building, coding, or executing features and technical solutions."
+    keywords:
+      - "implement"
+      - "build"
+      - "create"
+      - "develop"
+      - "code"
+      - "script"
+
+  debugging:
+    description: "Troubleshooting problems, fixing broken functionality, and root cause analysis."
+    keywords:
+      - "debug"
+      - "fix"
+      - "error"
+      - "broken"
+      - "doesn't work"
+      - "issue"
+      - "troubleshoot"
+
+  planning:
+    description: "Strategy design, workflow architecture, and decision-making around approaches."
+    keywords:
+      - "plan"
+      - "strategy"
+      - "workflow"
+      - "design"
+      - "approach"
+      - "roadmap"
+
+  brainstorm:
+    description: "Open-ended ideation, exploring possibilities, and conceptual thinking."
+    keywords:
+      - "brainstorm"
+      - "ideas"
+      - "explore"
+      - "what if"
+      - "concept"
+
+  admin:
+    description: "Administrative tasks, configuration, and setup work."
+    keywords:
+      - "setup"
+      - "config"
+      - "onboard"
+      - "document"
+      - "organize"
+
+  quick:
+    description: "Short, focused, single-purpose tasks completed in one session."
+    keywords:
+      - "quick"
+      - "fast"
+      - "simple"
+      - "update"
+      - "brief"
+
+  automation:
+    description: "Setting up automated workflows, scripts, and continuous processes."
+    keywords:
+      - "automation"
+      - "script"
+      - "hook"
+      - "workflow"
+      - "auto"
+      - "trigger"
+
+  writing:
+    description: "Content writing, email drafting, and documentation creation."
+    keywords:
+      - "write"
+      - "email"
+      - "draft"
+      - "content"
+      - "document"
+
+  # === Project Tags (customize for your projects) ===
+  # Example:
+  #
+  # my-project:
+  #   description: "Work related to my-project"
+  #   keywords:
+  #     - "my-project"
+  #     - "related-term"
