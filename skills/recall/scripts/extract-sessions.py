@@ -53,14 +53,18 @@ DEFAULT_SOURCE = _detect_default_source()
 DEFAULT_OUTPUT = _detect_default_output()
 DEFAULT_DAYS = 21
 
-# Patterns to strip from user messages (keep in sync with recall-day.py)
+# Patterns to strip from user messages (keep in sync with claude-sessions sync script)
 STRIP_PATTERNS = [
     re.compile(r'<system-reminder>.*?</system-reminder>', re.DOTALL),
     re.compile(r'<local-command-caveat>.*?</local-command-caveat>', re.DOTALL),
     re.compile(r'<local-command-stdout>.*?</local-command-stdout>', re.DOTALL),
     re.compile(r'<command-name>.*?</command-name>\s*<command-message>.*?</command-message>\s*(?:<command-args>.*?</command-args>)?', re.DOTALL),
+    re.compile(r'<command-message>.*?</command-message>', re.DOTALL),
+    re.compile(r'<command-name>.*?</command-name>', re.DOTALL),
+    re.compile(r'<command-args>.*?</command-args>', re.DOTALL),
     re.compile(r'<task-notification>.*?</task-notification>', re.DOTALL),
     re.compile(r'<teammate-message[^>]*>.*?</teammate-message>', re.DOTALL),
+    re.compile(r'<ide_opened_file>.*?</ide_opened_file>', re.DOTALL),
 ]
 
 

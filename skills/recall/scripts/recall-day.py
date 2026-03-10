@@ -22,14 +22,18 @@ from pathlib import Path
 
 CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
 
-# Reuse from extract-sessions.py
+# Patterns to strip from user messages (keep in sync with claude-sessions sync script)
 STRIP_PATTERNS = [
     re.compile(r'<system-reminder>.*?</system-reminder>', re.DOTALL),
     re.compile(r'<local-command-caveat>.*?</local-command-caveat>', re.DOTALL),
     re.compile(r'<local-command-stdout>.*?</local-command-stdout>', re.DOTALL),
     re.compile(r'<command-name>.*?</command-name>\s*<command-message>.*?</command-message>\s*(?:<command-args>.*?</command-args>)?', re.DOTALL),
+    re.compile(r'<command-message>.*?</command-message>', re.DOTALL),
+    re.compile(r'<command-name>.*?</command-name>', re.DOTALL),
+    re.compile(r'<command-args>.*?</command-args>', re.DOTALL),
     re.compile(r'<task-notification>.*?</task-notification>', re.DOTALL),
     re.compile(r'<teammate-message[^>]*>.*?</teammate-message>', re.DOTALL),
+    re.compile(r'<ide_opened_file>.*?</ide_opened_file>', re.DOTALL),
 ]
 
 DAY_NAMES = {
@@ -186,9 +190,12 @@ def scan_session_metadata(filepath: Path, date_start: datetime, date_end: dateti
                         raw = extract_text(obj['message'].get('content', ''))
                         cleaned = clean_content(raw)
                         if cleaned and len(cleaned) >= 5:
-                            # Skip pure slash commands
-                            if not re.match(r'^/\w+\s*$', cleaned):
-                                first_user_msg = cleaned
+                            # Skip pure slash commands and skill instructions
+                            if re.match(r'^/\w+\s*$', cleaned):
+                                continue
+                            if cleaned.startswith('Base directory for this skill:'):
+                                continue
+                            first_user_msg = cleaned
 
                 # Early exit: if we have start_time and it's outside range, skip
                 if start_time and i < 5:
