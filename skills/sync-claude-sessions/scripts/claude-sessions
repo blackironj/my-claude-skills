@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import fcntl
 import json
 import os
 import re
@@ -20,30 +21,11 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
-# Patterns to strip from user messages (keep in sync with recall scripts)
-STRIP_PATTERNS = [
-    re.compile(r'<system-reminder>.*?</system-reminder>', re.DOTALL),
-    re.compile(r'<local-command-caveat>.*?</local-command-caveat>', re.DOTALL),
-    re.compile(r'<local-command-stdout>.*?</local-command-stdout>', re.DOTALL),
-    re.compile(r'<command-name>.*?</command-name>\s*<command-message>.*?</command-message>\s*(?:<command-args>.*?</command-args>)?', re.DOTALL),
-    re.compile(r'<command-message>.*?</command-message>', re.DOTALL),
-    re.compile(r'<command-name>.*?</command-name>', re.DOTALL),
-    re.compile(r'<command-args>.*?</command-args>', re.DOTALL),
-    re.compile(r'<task-notification>.*?</task-notification>', re.DOTALL),
-    re.compile(r'<teammate-message[^>]*>.*?</teammate-message>', re.DOTALL),
-    re.compile(r'<ide_opened_file>.*?</ide_opened_file>', re.DOTALL),
-]
-
-
-def clean_text(text: str) -> str:
-    """Strip system/command tags from text."""
-    if not isinstance(text, str):
-        return ""
-    for pat in STRIP_PATTERNS:
-        text = pat.sub('', text)
-    return text.strip()
+# Import shared text cleaning utilities (single source of truth)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+from shared_utils import STRIP_PATTERNS, clean_text  # noqa: E402
 
 
 # English stop words for TF-IDF keyword extraction
@@ -201,7 +183,7 @@ OUTPUT_DIR = VAULT_DIR / "Claude-Sessions"
 SKILLS_DIR = VAULT_DIR / ".claude" / "skills"
 SESSIONS_DIR = _detect_sessions_dir()
 
-PRESERVED_FIELDS = {"comments", "projects", "status", "tags", "rating", "title"}
+PRESERVED_FIELDS = {"comments", "projects", "status", "tags", "rating", "title", "title_source"}
 PRESERVED_SECTION = "## My Notes"
 
 
@@ -454,14 +436,25 @@ def generate_markdown(data: dict, session_id: str, existing_fm: dict | None = No
     lines.append(f"date: {data['date']}")
     lines.append(f"session_id: {session_id}")
 
-    # Use preserved title if exists, otherwise from transcript — clean old tag residue
+    # Determine title and title_source
+    title_source = existing_fm.get("title_source", "auto") if existing_fm else "auto"
     title = existing_fm.get("title") if existing_fm else None
     if title:
         title = clean_text(title)
-    if not title or title in ("Untitled", "Untitled Session"):
+
+    if title_source in ("llm", "custom"):
+        # Preserve LLM/custom title across syncs
+        if not title or title in ("Untitled", "Untitled Session"):
+            title = data["title"] or "Untitled"
+            title_source = "auto"
+    else:
+        # Auto: always use latest from data (first user message)
         title = data["title"] or "Untitled"
+        title_source = "auto"
+
     title_escaped = title.replace('"', '\\"')
     lines.append(f'title: "{title_escaped}"')
+    lines.append(f"title_source: {title_source}")
 
     if data["summary"]:
         summary_escaped = data["summary"].replace('"', '\\"').replace("\n", " ")
@@ -627,6 +620,28 @@ def get_output_path(session_id: str, date: str) -> Path:
     return OUTPUT_DIR / f"{date}-{session_id[:8]}.md"
 
 
+def _spawn_title_gen(jsonl_path: str, md_path: str):
+    """Spawn background LLM title generation."""
+    script_path = Path(__file__).resolve().parent / "update-title.py"
+    if not script_path.exists():
+        return
+    env = os.environ.copy()
+    env.pop("CLAUDECODE", None)
+    try:
+        log_path = Path.home() / ".claude" / "hooks" / "title-gen.log"
+        log_fd = open(log_path, "a")
+        subprocess.Popen(
+            [sys.executable, str(script_path), "--jsonl", jsonl_path, "--md", md_path],
+            start_new_session=True,
+            stdout=log_fd,
+            stderr=subprocess.STDOUT,
+            env=env,
+        )
+        log_fd.close()
+    except Exception:
+        pass  # Best-effort
+
+
 def sync_session(session_id: str, transcript_path: str | None = None, quiet: bool = False) -> Path | None:
     """Sync a session to markdown. Returns output path or None."""
     if session_id.startswith("agent-"):
@@ -660,10 +675,32 @@ def sync_session(session_id: str, transcript_path: str | None = None, quiet: boo
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     markdown = generate_markdown(data, session_id, existing_fm, my_notes)
-    output_file.write_text(markdown, encoding="utf-8")
+
+    # File lock to prevent race condition between UserPromptSubmit and Stop hooks
+    lock_path = Path(f"/tmp/claude-sync-{session_id[:8]}.lock")
+    try:
+        lock_fd = open(lock_path, "w")
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (OSError, IOError):
+        # Another sync is writing this session — skip
+        if not quiet:
+            print(f"Skipped (locked): {session_id[:8]}")
+        return None
+
+    try:
+        output_file.write_text(markdown, encoding="utf-8")
+    finally:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        lock_fd.close()
+        lock_path.unlink(missing_ok=True)
 
     if not quiet:
         print(f"Synced: {output_file}")
+
+    # Spawn background LLM title generation if needed
+    title_source = existing_fm.get("title_source", "auto") if existing_fm else "auto"
+    if data["messages"] >= 5 and title_source == "auto":
+        _spawn_title_gen(str(jsonl_path), str(output_file))
 
     return output_file
 
