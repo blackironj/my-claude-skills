@@ -22,7 +22,7 @@ This is the only file that differs per machine:
 ```bash
 cat > ~/.claude/env << 'EOF'
 # Claude Code environment — sourced by all hooks
-VAULT_DIR="/path/to/your/obsidian-vault"
+export VAULT_DIR="/path/to/your/obsidian-vault"
 EOF
 ```
 

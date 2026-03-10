@@ -62,13 +62,21 @@ def extract_text(content) -> str:
     return ""
 
 
-def parse_date_expr(expr: str) -> tuple[datetime, datetime]:
-    """Parse a date expression into (start, end) date range (UTC, day boundaries).
+def _local_tz() -> timezone:
+    """Get local timezone offset."""
+    import time
+    offset = timedelta(seconds=-time.timezone if time.daylight == 0 else -time.altzone)
+    return timezone(offset)
 
-    Returns start of day (inclusive) and end of day (exclusive).
+
+def parse_date_expr(expr: str) -> tuple[datetime, datetime]:
+    """Parse a date expression into (start, end) date range (local time, day boundaries).
+
+    Returns start of day (inclusive) and end of day (exclusive) in local timezone.
     """
     expr = expr.strip().lower()
-    now = datetime.now(timezone.utc)
+    local_tz = _local_tz()
+    now = datetime.now(local_tz)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     if expr == 'today':
@@ -140,16 +148,7 @@ def get_project_dirs(project_path: str | None, all_projects: bool) -> list[Path]
         print(f"Error: Project path not found: {project_path}", file=sys.stderr)
         sys.exit(1)
 
-    if all_projects:
-        return [d for d in CLAUDE_PROJECTS.iterdir() if d.is_dir()]
-
-    # Default: detect project dir from CWD
-    cwd = os.getcwd()
-    encoded = cwd.replace("/", "-")
-    default = CLAUDE_PROJECTS / encoded
-    if default.exists():
-        return [default]
-    # Fallback: all projects
+    # Default: scan all projects (recall is cross-project by nature)
     return [d for d in CLAUDE_PROJECTS.iterdir() if d.is_dir()]
 
 
@@ -176,7 +175,7 @@ def scan_session_metadata(filepath: Path, date_start: datetime, date_end: dateti
                 ts_str = obj.get('timestamp')
                 if ts_str and not start_time:
                     try:
-                        start_time = datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
+                        start_time = datetime.fromisoformat(ts_str.replace('Z', '+00:00')).astimezone(_local_tz())
                     except (ValueError, TypeError):
                         pass
 
@@ -256,7 +255,7 @@ def cmd_list(args):
         for filepath in jsonl_files:
             # Coarse filter: mtime must be within range (with 1 day buffer)
             try:
-                mtime = datetime.fromtimestamp(filepath.stat().st_mtime, tz=timezone.utc)
+                mtime = datetime.fromtimestamp(filepath.stat().st_mtime, tz=_local_tz())
                 if mtime < date_start - timedelta(days=1):
                     continue
             except OSError:
@@ -352,7 +351,7 @@ def cmd_expand(args):
             ts_label = ''
             if ts_str:
                 try:
-                    dt = datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
+                    dt = datetime.fromisoformat(ts_str.replace('Z', '+00:00')).astimezone(_local_tz())
                     ts_label = dt.strftime('%H:%M')
                 except (ValueError, TypeError):
                     pass

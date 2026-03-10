@@ -49,7 +49,7 @@ chmod +x ~/.claude/hooks/index-sessions.sh
 cat > ~/.claude/env << 'EOF'
 # Claude Code environment — sourced by all hooks
 # Change this per machine
-VAULT_DIR="/path/to/your/obsidian-vault"
+export VAULT_DIR="/path/to/your/obsidian-vault"
 EOF
 ```
 

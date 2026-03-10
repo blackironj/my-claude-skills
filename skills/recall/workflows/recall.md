@@ -20,7 +20,7 @@ Parse the user's input after `/recall` and classify:
 Run the recall-day script from the skill's scripts directory:
 
 ```bash
-python3 .claude/skills/recall/scripts/recall-day.py list DATE_EXPR
+python3 ~/.claude/skills/recall/scripts/recall-day.py list DATE_EXPR
 ```
 
 Replace `DATE_EXPR` with the parsed date expression. Supported:
@@ -32,12 +32,12 @@ Replace `DATE_EXPR` with the parsed date expression. Supported:
 
 Options:
 - `--min-msgs N` - filter noise (default: 3)
-- `--all-projects` - scan all projects, not just current vault
+- `--project PATH` - limit to a specific project (default: scans all projects)
 
 Present the table to the user. If they pick a session to expand:
 
 ```bash
-python3 .claude/skills/recall/scripts/recall-day.py expand SESSION_ID
+python3 ~/.claude/skills/recall/scripts/recall-day.py expand SESSION_ID
 ```
 
 This shows the conversation flow (user messages, assistant first lines, tool calls).
@@ -46,7 +46,13 @@ This shows the conversation flow (user messages, assistant first lines, tool cal
 
 BM25 is keyword-based - it only finds exact word matches. The user's recall of a topic often uses different words than the session itself (e.g. "disk clean up" vs "large files on computer"). Fix: expand the query into 3-4 keyword variants covering synonyms and related phrasings.
 
-**Step 2B.1: Expand query into variants.** Generate 3-4 alternative phrasings that someone might use for the same topic. Think: what other words describe this? Example:
+**Step 2B.1: Expand query into variants.** Generate 3-4 alternative phrasings that someone might use for the same topic. Think: what other words describe this?
+
+**Korean queries:** QMD's BM25 tokenizer (`porter unicode61`) cannot segment Korean text. If the user's query is in Korean, translate it to English keywords before searching. Include both English variants and any English terms that appeared in the original Korean query. Example:
+- User says "디스크 정리" -> variants: `"disk cleanup free space"`, `"large files storage"`, `"delete cache bloat"`
+- User says "인증 작업" -> variants: `"authentication"`, `"auth login token"`, `"credential session"`
+
+English example:
 - User says "disk clean up" -> variants: `"disk cleanup free space"`, `"large files storage"`, `"delete cache bloat GB"`, `"free up computer space"`
 
 **Step 2B.2: Run ALL variants across ALL collections in parallel** (fast, ~0.3s each):
@@ -138,13 +144,13 @@ No results found for "QUERY". Try:
 Strip "graph" prefix from query to get the date expression. Run:
 
 ```bash
-python3 .claude/skills/recall/scripts/session-graph.py DATE_EXPR
+python3 ~/.claude/skills/recall/scripts/session-graph.py DATE_EXPR
 ```
 
 Options:
 - `--min-files N` - only show sessions touching N+ files (default: 2, use 5+ for cleaner graphs)
 - `--min-msgs N` - filter noise (default: 3)
-- `--all-projects` - scan all projects
+- `--project PATH` - limit to a specific project (default: all)
 - `-o PATH` - custom output path (default: /tmp/session-graph.html)
 - `--no-open` - don't auto-open browser
 
