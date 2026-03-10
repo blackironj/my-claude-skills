@@ -17,6 +17,7 @@ alias cs="python3 ~/.claude/skills/sync-claude-sessions/scripts/claude-sessions"
 cs list                    # Active sessions
 cs list --all              # All sessions
 cs export --today          # Export today's sessions
+cs export --all-projects   # Export all sessions across all projects
 cs resume --pick           # Interactive resume
 cs note "got it working"   # Add timestamped comment
 cs close "done"            # Mark session done
@@ -27,7 +28,7 @@ cs close "done"            # Mark session done
 | Command | Description |
 |---------|-------------|
 | `sync` | Sync session (hook or explicit) |
-| `export` | Batch export (`--today`, `--all`, `<file>`) |
+| `export` | Batch export (`--today`, `--all`, `--all-projects`, `<file>`) |
 | `resume` | Resume session (`--pick`, `--active`, `<file>`) |
 | `note` | Add timestamped comment |
 | `close` | Mark done + optional comment |

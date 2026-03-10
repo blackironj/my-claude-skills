@@ -940,9 +940,20 @@ def cmd_export(args):
     else:
         sessions = [Path(args.file)]
 
+    synced = 0
     for session_file in sessions:
         session_id = session_file.stem
-        sync_session(session_id, str(session_file), quiet=args.quiet)
+        if sync_session(session_id, str(session_file), quiet=args.quiet):
+            synced += 1
+
+    # Auto-run qmd update after --all-projects export
+    if args.all_projects and synced > 0:
+        try:
+            subprocess.run(["qmd", "update"], timeout=60, capture_output=not args.quiet)
+            if not args.quiet:
+                print(f"QMD index updated ({synced} sessions synced)")
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass  # qmd not installed or timed out
 
     return 0
 
