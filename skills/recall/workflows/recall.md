@@ -42,6 +42,13 @@ Present the table to the user. If they pick a session to expand, offer two depth
 python3 ~/.claude/skills/recall/scripts/recall-day.py expand SESSION_ID
 ```
 
+Options:
+- `--max-msgs N` - limit messages shown (default: 50)
+- `--project PATH` - limit to a specific project
+- `--all-projects` - scan all projects
+
+**IMPORTANT: These are the ONLY supported flags. Do NOT invent flags like `--summary`. Do NOT suppress stderr with `2>/dev/null`.**
+
 **Deep context** — read the full synced session markdown from Obsidian vault:
 
 ```bash
@@ -142,6 +149,33 @@ Options:
 Opens interactive HTML in browser. Session nodes colored by day, file nodes colored by folder.
 Tell the user the node/edge counts and what to look for (clusters, shared files).
 
+## CLI Reference (Exact Supported Flags)
+
+**Do NOT invent or guess flags. Only use flags listed below.**
+
+### `recall-day.py list DATE_EXPR`
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--min-msgs N` | int | 3 | Filter noise by minimum user messages |
+| `--project PATH` | str | (all) | Limit to specific project path |
+| `--all-projects` | flag | false | Scan all projects |
+
+### `recall-day.py expand SESSION_ID`
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--max-msgs N` | int | 50 | Maximum messages to display |
+| `--project PATH` | str | (all) | Limit to specific project path |
+| `--all-projects` | flag | false | Scan all projects |
+
+### `session-graph.py DATE_EXPR`
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--min-files N` | int | 2 | Only show sessions touching N+ files |
+| `--min-msgs N` | int | 3 | Filter noise |
+| `--project PATH` | str | (all) | Limit to specific project |
+| `-o PATH` | str | /tmp/session-graph.html | Custom output path |
+| `--no-open` | flag | false | Don't auto-open browser |
+
 ## Notes
 
 - Temporal queries go through `recall-day.py` (native JSONL, no QMD needed)
@@ -149,3 +183,4 @@ Tell the user the node/edge counts and what to look for (clusters, shared files)
 - Topic queries use BM25 (`qmd search`) NOT hybrid (`qmd query`) - 53x faster
 - Run all 3 collection searches in parallel to keep response time fast
 - If a result is truncated or you need more context, fetch with `-l 100` or higher
+- **Never suppress stderr with `2>/dev/null`** — let argparse errors surface so you can see what's wrong
