@@ -20,6 +20,9 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+LOCAL_TZ = ZoneInfo(os.environ.get("CLAUDE_SESSIONS_TZ", "Asia/Seoul"))
 
 __version__ = "1.3.0"
 
@@ -274,7 +277,8 @@ def extract_session_data(records: list[dict]) -> dict:
             timestamp = record.get("timestamp", "")
             if timestamp:
                 if not data["date"]:
-                    data["date"] = timestamp.split("T")[0]
+                    dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                    data["date"] = dt.astimezone(LOCAL_TZ).strftime("%Y-%m-%d")
                 if not data["first_timestamp"]:
                     data["first_timestamp"] = timestamp
                 data["last_timestamp"] = timestamp
@@ -333,7 +337,7 @@ def extract_session_data(records: list[dict]) -> dict:
         data["title"] = "Untitled"
 
     if not data["date"]:
-        data["date"] = datetime.now().strftime("%Y-%m-%d")
+        data["date"] = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d")
 
     file_ops = extract_file_operations(records)
     data["files_created"] = file_ops["created"]
@@ -437,6 +441,7 @@ def generate_markdown(data: dict, session_id: str, existing_fm: dict | None = No
     lines.append("type: claude-session")
     lines.append(f"date: {data['date']}")
     lines.append(f"session_id: {session_id}")
+    lines.append(f"timezone: {LOCAL_TZ}")
 
     # Determine title and title_source
     title_source = existing_fm.get("title_source", "auto") if existing_fm else "auto"
