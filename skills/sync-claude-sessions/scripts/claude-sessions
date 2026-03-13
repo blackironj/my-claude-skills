@@ -913,8 +913,8 @@ def cmd_sync(args):
         # No session_id is normal on first prompt or when stdin is unavailable
         return 0
 
-    result = sync_session(session_id, transcript_path, quiet=args.quiet)
-    return 0 if result else 1
+    sync_session(session_id, transcript_path, quiet=args.quiet)
+    return 0
 
 
 def _find_all_project_sessions(cutoff: float | None = None) -> list[Path]:
