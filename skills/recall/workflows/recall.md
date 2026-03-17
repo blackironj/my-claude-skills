@@ -15,9 +15,33 @@ Parse the user's input after `/recall` and classify:
 - **Both** - temporal + topic: "what did I do with QMD yesterday"
   -> Go to Step 2A first, then scan results for the topic
 
-## Step 2A: Temporal Recall (JSONL Timeline)
+## Step 2A: Temporal Recall (Obsidian First, then Local JSONL)
 
-Run the recall-day script from the skill's scripts directory:
+Obsidian sessions include work from ALL computers (synced), so check there first. Local JSONL catches any unsynced sessions.
+
+### Step 2A.1: Scan Obsidian Sessions by Date (Primary)
+
+Convert DATE_EXPR to date pattern(s) (YYYY-MM-DD), then list matching session files:
+
+```bash
+. ~/.claude/env && ls "$VAULT_DIR/Claude-Sessions/"DATE_PATTERN-* 2>/dev/null
+```
+
+Examples:
+- `yesterday` (2026-03-16) → `ls "$VAULT_DIR/Claude-Sessions/"2026-03-16-*`
+- `this week` → `ls "$VAULT_DIR/Claude-Sessions/"2026-03-{10,11,12,13,14,15,16,17}-*` (expand to each date in range)
+- `last week` → similar expansion for the prior week's dates
+- `2026-03-15` → `ls "$VAULT_DIR/Claude-Sessions/"2026-03-15-*`
+
+For each matched file, read the YAML frontmatter to extract: date, title, messages count, skills, tags, status, projects.
+
+Present as a table:
+| # | Time | Session ID | Title | Msgs | Skills/Tags |
+|---|------|-----------|-------|------|-------------|
+
+### Step 2A.2: Scan Local JSONL (Supplementary)
+
+Also run the local script to catch unsynced sessions:
 
 ```bash
 python3 ~/.claude/skills/recall/scripts/recall-day.py list DATE_EXPR
@@ -34,7 +58,13 @@ Options:
 - `--min-msgs N` - filter noise (default: 3)
 - `--project PATH` - limit to a specific project (default: scans all projects)
 
-Present the table to the user. If they pick a session to expand, offer two depth levels:
+### Step 2A.3: Merge & Deduplicate
+
+Match sessions by the 8-char session ID prefix. If a session appears in both Obsidian and local JSONL, prefer the Obsidian version (richer metadata). Show any local-only sessions separately marked as "(unsynced)".
+
+### Step 2A.4: Expand a Session
+
+If the user picks a session to expand, offer two depth levels:
 
 **Quick expand** — conversation timeline (user messages, assistant first lines, tool calls):
 
@@ -178,7 +208,7 @@ Tell the user the node/edge counts and what to look for (clusters, shared files)
 
 ## Notes
 
-- Temporal queries go through `recall-day.py` (native JSONL, no QMD needed)
+- Temporal queries check Obsidian Claude-Sessions first (includes all synced computers), then local JSONL for unsynced sessions
 - Graph queries go through `session-graph.py` (NetworkX + pyvis)
 - Topic queries use BM25 (`qmd search`) NOT hybrid (`qmd query`) - 53x faster
 - Run all 3 collection searches in parallel to keep response time fast
