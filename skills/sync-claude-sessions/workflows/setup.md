@@ -4,7 +4,7 @@
 
 - Python 3.10+
 - Obsidian vault (target for session exports)
-- (Optional) [QMD](https://github.com/ArtemXTech/qmd) for topic search via recall skill
+- (Optional) [ir](https://github.com/vlwkaos/ir) for topic search via recall skill
 
 ## 1. Install Skills
 
@@ -78,15 +78,28 @@ cp hooks/index-sessions.sh ~/.claude/hooks/
 chmod +x ~/.claude/hooks/index-sessions.sh
 ```
 
-## 5. (Optional) QMD Topic Search
+### Step 5: ir for topic search (optional)
 
-Set up QMD collections for recall topic search:
+Install [ir](https://github.com/vlwkaos/ir) for keyword search across sessions and notes. ir is installed locally per machine — the Obsidian vault (with `Claude-Sessions/` and `Notes/`) syncs across PCs via Obsidian Sync, but ir and its index must be set up on each machine.
 
 ```bash
-cd "$VAULT_DIR"
-qmd collection add Claude-Sessions --name sessions
-qmd collection add Notes --name notes
-qmd update
+# Build from source (Rust 1.80+ required)
+cd ~/workspace/ir
+cargo install --path .
+
+# Korean preprocessor (build from source on Linux)
+cd ~/workspace/ir/preprocessors/ko/lindera-tokenize
+cargo install --path .
+ir preprocessor add ko lindera-tokenize
+
+# Register collections
+ir collection add sessions "$VAULT_DIR/Claude-Sessions/"
+ir collection add notes "$VAULT_DIR/Notes/"
+
+# Bind preprocessor + build index
+ir preprocessor bind ko sessions
+ir preprocessor bind ko notes
+ir update
 ```
 
 ## 6. Shell Alias (Optional)
@@ -108,15 +121,12 @@ Then:
 # Test sync hook (should print "Synced: ..." or exit silently)
 echo '{}' | python ~/.claude/skills/sync-claude-sessions/scripts/claude-sessions sync
 
-# Test extract (should find and extract sessions)
-python ~/.claude/skills/recall/scripts/extract-sessions.py --days 1 --source ~/.claude/projects
-
-# Test QMD indexing
+# Test ir indexing (should update search index)
 bash ~/.claude/hooks/index-sessions.sh
 ```
 
 ## What Gets Synced
 
 - **On every message (UserPromptSubmit/Stop):** Session metadata, skills used, artifacts created/modified, conversation
-- **On session end (SessionEnd):** QMD index update for topic search via recall
+- **On session end (SessionEnd):** ir index update for topic search via recall
 - **Preserved across syncs:** `## My Notes` section, `status`, `tags`, `rating`, `comments` fields

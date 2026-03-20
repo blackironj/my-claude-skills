@@ -19,7 +19,7 @@ Features:
 Load context from previous sessions. Three modes:
 
 - **Temporal** (date-based): `/recall yesterday`, `/recall last week`
-- **Topic** (BM25 search): `/recall authentication` (requires [QMD](https://github.com/ArtemXTech/qmd))
+- **Topic** (BM25 search): `/recall authentication` (requires [ir](https://github.com/vlwkaos/ir))
 - **Graph** (visualization): `/recall graph last week` (requires networkx, pyvis)
 
 Ends every recall with **One Thing** — the single highest-leverage next action.
@@ -98,13 +98,17 @@ This is the only file that differs per PC. All hooks source it automatically.
 }
 ```
 
-### 3. (Optional) QMD for topic search
+### 3. (Optional) ir for topic search
 
 ```bash
-. ~/.claude/env
-cd "$VAULT_DIR"
-qmd collection add Claude-Sessions --name sessions
-qmd update
+# Build from source (Rust 1.80+ required)
+cd ~/workspace/ir
+cargo install --path .
+
+# Register collections and build index
+ir collection add sessions "$VAULT_DIR/Claude-Sessions/"
+ir collection add notes "$VAULT_DIR/Notes/"
+ir update
 ```
 
 See [setup guide](skills/sync-claude-sessions/workflows/setup.md) for full details.
@@ -114,7 +118,7 @@ See [setup guide](skills/sync-claude-sessions/workflows/setup.md) for full detai
 - Python 3.10+
 - Claude Code with hooks support
 - Obsidian vault
-- (Optional) QMD for topic search
+- (Optional) [ir](https://github.com/vlwkaos/ir) for topic search
 - (Optional) networkx + pyvis for graph visualization
 
 ## License

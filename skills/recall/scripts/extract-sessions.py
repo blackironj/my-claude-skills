@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Extract user messages from Claude Code session logs into QMD-friendly markdown.
+"""Extract user messages from Claude Code session logs into markdown.
+
+NOTE: This script is no longer called automatically by hooks.
+The index-sessions.sh hook now runs `ir update` directly on Claude-Sessions/.
+This script is kept for manual use or one-off extraction.
 
 Usage:
     python3 extract-sessions.py [--days 21] [--source DIR] [--output DIR]
@@ -7,14 +11,6 @@ Usage:
 Extracts only YOUR messages from Claude Code JSONL session logs.
 Strips system tags, slash commands, and agent noise.
 Creates one markdown file per session with timestamp headers.
-
-Output files are named: YYYY-MM-DD-HHMM-{session_id_short}.md
-Each file has frontmatter (date, session_id, title, type, messages count)
-and each user message as its own ## section with timestamp.
-
-After running, add as QMD collection:
-    qmd collection add /path/to/output --name sessions
-    qmd update && qmd embed
 """
 
 import json
