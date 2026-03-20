@@ -1,6 +1,6 @@
 # Recall Workflow
 
-Load context from vault memory - temporal queries use native JSONL files, topic queries use QMD search.
+Load context from vault memory - temporal queries use native JSONL files, topic queries use ir search.
 
 ## Step 1: Classify Query
 
@@ -10,9 +10,9 @@ Parse the user's input after `/recall` and classify:
   -> Go to Step 2C
 - **Temporal** - mentions time: "yesterday", "today", "last week", "this week", a date, "what was I doing", "session history"
   -> Go to Step 2A
-- **Topic** - mentions a subject: "QMD video", "authentication", "lab content"
+- **Topic** - mentions a subject: "recall system", "authentication", "lab content"
   -> Go to Step 2B
-- **Both** - temporal + topic: "what did I do with QMD yesterday"
+- **Both** - temporal + topic: "what did I do with auth yesterday"
   -> Go to Step 2A first, then scan results for the topic
 
 ## Step 2A: Temporal Recall
@@ -64,43 +64,36 @@ The Claude-Sessions markdown contains the full conversation, artifacts (created/
 If user says "컨텍스트 줘", "이어서 하고 싶어", "resume", or wants to continue past work → use deep context.
 If user just wants to browse what happened → use quick expand.
 
-## Step 2B: Topic Recall (QMD BM25 with Query Expansion)
+## Step 2B: Topic Recall (ir BM25 with Korean Support)
 
-BM25 is keyword-based - it only finds exact word matches. The user's recall of a topic often uses different words than the session itself (e.g. "disk clean up" vs "large files on computer"). Fix: expand the query into 3-4 keyword variants covering synonyms and related phrasings.
+BM25 is keyword-based - it only finds exact word matches. The user's recall of a topic often uses different words than the session itself. Fix: expand the query into 3-4 keyword variants covering synonyms and related phrasings.
 
 **Step 2B.1: Expand query into variants.** Generate 3-4 alternative phrasings that someone might use for the same topic. Think: what other words describe this?
 
-**Korean queries:** QMD's BM25 tokenizer (`porter unicode61`) cannot segment Korean text. If the user's query is in Korean, translate it to English keywords before searching. Include both English variants and any English terms that appeared in the original Korean query. Example:
-- User says "디스크 정리" -> variants: `"disk cleanup free space"`, `"large files storage"`, `"delete cache bloat"`
-- User says "인증 작업" -> variants: `"authentication"`, `"auth login token"`, `"credential session"`
+**Bilingual queries:** ir's Korean preprocessor handles Korean tokenization natively. For ALL queries, generate variants in both the query's original language and English. Sessions are Korean-English mixed, so bilingual variants maximize recall.
 
-English example:
-- User says "disk clean up" -> variants: `"disk cleanup free space"`, `"large files storage"`, `"delete cache bloat GB"`, `"free up computer space"`
+- Korean query example: "디스크 정리" → `"디스크 정리 용량"`, `"disk cleanup free space"`, `"대용량 파일 삭제"`
+- English query example: "disk cleanup" → `"disk cleanup free space"`, `"디스크 정리"`, `"large files storage"`, `"delete cache bloat GB"`
 
 **Step 2B.2: Run ALL variants across ALL collections in parallel** (fast, ~0.3s each):
 
 ```bash
-qmd search "VARIANT_1" -c sessions -n 5
-qmd search "VARIANT_2" -c sessions -n 5
-qmd search "VARIANT_3" -c sessions -n 5
-qmd search "VARIANT_1" -c notes -n 5
-qmd search "VARIANT_2" -c notes -n 5
-qmd search "VARIANT_1" -c daily -n 3
+ir search "VARIANT_1" -c sessions -n 5 --mode bm25 --md
+ir search "VARIANT_2" -c sessions -n 5 --mode bm25 --md
+ir search "VARIANT_3" -c sessions -n 5 --mode bm25 --md
+ir search "VARIANT_1" -c notes -n 5 --mode bm25 --md
+ir search "VARIANT_2" -c notes -n 5 --mode bm25 --md
 ```
 
-Run sessions variants in parallel. Notes/daily can use fewer variants (prioritize sessions for recall).
+Run sessions variants in parallel. Notes can use fewer variants (prioritize sessions for recall).
 
 **Step 2B.3: Deduplicate results** by document path. If same doc appears in multiple searches, keep the highest score. Present top 5 unique results.
 
 ## Step 3: Fetch Full Documents (Topic path only)
 
-For the top 3 most relevant results across all collections, get the full document:
+For the top 3 most relevant results, read the files directly using the Read tool. File paths are included in `ir search --md` output. No separate fetch command needed — the files are local markdown in the Obsidian vault.
 
-```bash
-qmd get "qmd://collection/path/to/file.md" -l 50
-```
-
-Use the paths returned from Step 2B searches. The `-l 50` flag limits to 50 lines (adjust if needed for very large files).
+If you need the path programmatically, use `ir search --json` which returns structured output with document paths.
 
 ## Step 4: Present Results (Speed First)
 
@@ -113,7 +106,7 @@ Use the paths returned from Step 2B searches. The `-l 50` flag limits to 50 line
 
 That's it. Do NOT re-create the table in markdown, summarize each session, or add commentary.
 
-**For topic queries:** Show QMD search results directly, then briefly note top 3 matches with file paths.
+**For topic queries:** Show search results directly, then briefly note top 3 matches with file paths.
 
 ## Step 5: One Thing (One Sentence)
 
@@ -186,7 +179,7 @@ Tell the user the node/edge counts and what to look for (clusters, shared files)
 - **Always prefix commands with `. ~/.claude/env &&`** — this injects `VAULT_DIR` for Obsidian access
 - `recall-day.py` scans local JSONL first, then Obsidian for remote sessions (auto-dedup by session ID)
 - Graph queries go through `session-graph.py` (NetworkX + pyvis)
-- Topic queries use BM25 (`qmd search`) NOT hybrid (`qmd query`) - 53x faster
-- Run all 3 collection searches in parallel to keep response time fast
-- If a result is truncated or you need more context, fetch with `-l 100` or higher
+- Topic queries use BM25 (`ir search --mode bm25`) - fast keyword search with Korean support
+- Run all collection searches (sessions + notes) in parallel to keep response time fast
+- If a result is truncated or you need more context, Read the full file from the Obsidian vault
 - **Never suppress stderr with `2>/dev/null`** — let argparse errors surface so you can see what's wrong
