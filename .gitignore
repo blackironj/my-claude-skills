@@ -3,3 +3,7 @@ __pycache__/
 *.pyo
 *.log
 .DS_Store
+Claude-Sessions/
+docs/superpowers/
+docs/specs/
+docs/plans/
