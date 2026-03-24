@@ -29,35 +29,23 @@ Ends every recall with **One Thing** — the single highest-leverage next action
 
 Save session content (analysis, specs, designs) to Obsidian vault.
 
+## Requirements
+
+- Python 3.10+
+- Claude Code with hooks support
+- Obsidian vault
+- (Optional) [ir](https://github.com/vlwkaos/ir) + Rust 1.80+ for topic search
+- (Optional) networkx + pyvis for graph visualization
+
 ## Installation
 
-### Option A: Claude Code Plugin (recommended)
+### Step 1: Install the plugin
 
 ```bash
-claude plugin marketplace add blackironj/my-claude-skills
-claude plugin install my-claude-skills
+claude plugin add --git https://github.com/blackironj/my-claude-skills.git
 ```
 
-### Option B: Manual
-
-```bash
-git clone https://github.com/blackironj/my-claude-skills.git
-cd my-claude-skills
-
-# Install skills
-cp -r skills/recall ~/.claude/skills/
-cp -r skills/sync-claude-sessions ~/.claude/skills/
-cp -r skills/save-doc ~/.claude/skills/
-
-# Install SessionEnd hook
-mkdir -p ~/.claude/hooks
-cp hooks/index-sessions.sh ~/.claude/hooks/
-chmod +x ~/.claude/hooks/index-sessions.sh
-```
-
-## Configuration
-
-### 1. Create `~/.claude/env` (per machine)
+### Step 2: Create `~/.claude/env` (per machine)
 
 ```bash
 cat > ~/.claude/env << 'EOF'
@@ -69,7 +57,7 @@ EOF
 
 This is the only file that differs per PC. All hooks source it automatically.
 
-### 2. Add hooks to `~/.claude/settings.json`
+### Step 3: Add hooks to `~/.claude/settings.json`
 
 ```json
 {
@@ -112,22 +100,28 @@ This is the only file that differs per PC. All hooks source it automatically.
 }
 ```
 
-### 3. (Optional) ir for topic search
+### Step 4: (Optional) Install ir for topic search
+
+[ir](https://github.com/vlwkaos/ir) enables BM25-based topic search with Korean support. Skip this step if you only need temporal recall.
+
+**Prerequisites:** Rust 1.80+, libclang-dev, cmake
 
 ```bash
-# Build ir from source (Rust 1.80+ required, libclang-dev, cmake)
+# Clone and build ir
 cd ~/workspace
 git clone https://github.com/vlwkaos/ir.git && cd ir
 cargo install --path . --no-default-features --features llama-openmp  # Linux
 # cargo install --path .  # macOS (Metal auto-detected)
 
 # Korean preprocessor
-cd preprocessors/ko/lindera-tokenize  # Linux: build from source
+# Linux: build from source
+cd preprocessors/ko/lindera-tokenize
 cargo install --path .
 ir preprocessor add ko lindera-tokenize
 # macOS: ir preprocessor install ko
 
 # Register collection and build index
+source ~/.claude/env
 ir collection add sessions "$VAULT_DIR/Claude-Sessions/"
 ir preprocessor bind ko sessions
 ir update
@@ -135,30 +129,32 @@ ir update
 
 ir is installed per machine. The Obsidian vault syncs across PCs; ir index is local.
 
-See [setup guide](skills/sync-claude-sessions/workflows/setup.md) for full details.
+### Manual installation (alternative)
+
+If you prefer not to use the plugin system:
+
+```bash
+git clone https://github.com/blackironj/my-claude-skills.git
+cd my-claude-skills
+
+# Install skills
+cp -r skills/recall ~/.claude/skills/
+cp -r skills/sync-claude-sessions ~/.claude/skills/
+cp -r skills/save-doc ~/.claude/skills/
+
+# Install SessionEnd hook
+mkdir -p ~/.claude/hooks
+cp hooks/index-sessions.sh ~/.claude/hooks/
+chmod +x ~/.claude/hooks/index-sessions.sh
+```
+
+Then follow Steps 2-4 above.
 
 ## Updating
 
-### Plugin install
 ```bash
 claude plugin update my-claude-skills
 ```
-
-### Manual install
-```bash
-cd my-claude-skills
-cp -r skills/recall ~/.claude/skills/
-cp -r skills/sync-claude-sessions ~/.claude/skills/
-cp hooks/index-sessions.sh ~/.claude/hooks/
-```
-
-## Requirements
-
-- Python 3.10+
-- Claude Code with hooks support
-- Obsidian vault
-- (Optional) [ir](https://github.com/vlwkaos/ir) + Rust 1.80+ for topic search
-- (Optional) networkx + pyvis for graph visualization
 
 ## License
 
