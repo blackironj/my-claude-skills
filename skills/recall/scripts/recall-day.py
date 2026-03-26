@@ -30,7 +30,6 @@ VAULT_DIR = os.environ.get('VAULT_DIR', '')
 OBSIDIAN_SESSIONS = Path(VAULT_SESSIONS_DIR) if VAULT_SESSIONS_DIR else (Path(VAULT_DIR) / "Claude-Sessions" if VAULT_DIR else None)
 
 
-
 def scan_obsidian_sessions(date_start: datetime, date_end: datetime) -> list[dict]:
     """Scan Obsidian Claude-Sessions for the given date range. Returns session metadata list."""
     if not OBSIDIAN_SESSIONS or not OBSIDIAN_SESSIONS.exists():
