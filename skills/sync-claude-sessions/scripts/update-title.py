@@ -58,16 +58,10 @@ def get_assistant_summaries(jsonl_path: Path, max_summaries: int = 5) -> list[st
                 continue
             if record.get("type") != "assistant":
                 continue
-            msg = record.get("message", {})
-            contents = msg.get("content", [])
-            if isinstance(contents, list):
-                for item in contents:
-                    if isinstance(item, dict) and item.get("type") == "text":
-                        text = item.get("text", "").strip()
-                        if text:
-                            first_line = text.split("\n")[0][:200]
-                            summaries.append(first_line)
-                            break
+            text = extract_text(record.get("message", {}).get("content", []))
+            if text.strip():
+                first_line = text.strip().split("\n")[0][:200]
+                summaries.append(first_line)
             if len(summaries) >= max_summaries:
                 break
     return summaries

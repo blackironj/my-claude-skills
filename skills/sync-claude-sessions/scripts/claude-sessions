@@ -18,6 +18,7 @@ import re
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -704,7 +705,7 @@ def sync_session(session_id: str, transcript_path: str | None = None, quiet: boo
     return output_file
 
 
-def _update_session_file(session_id: str, updater) -> bool:
+def _update_session_file(session_id: str, updater: Callable[[str, dict], str | None]) -> bool:
     """Find session file, read, apply updater(content, fm) -> new_content, write back."""
     session_file = find_session_file(session_id)
     if not session_file or not session_file.exists():
