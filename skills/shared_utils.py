@@ -43,6 +43,20 @@ def clean_content(text: str) -> str:
 clean_text = clean_content
 
 
+def iter_content_blocks(content, block_type: str | None = None):
+    """Iterate content blocks from a message, optionally filtering by type.
+
+    Yields dicts from content list where block.get('type') matches block_type.
+    If block_type is None, yields all dict blocks.
+    """
+    if not isinstance(content, list):
+        return
+    for block in content:
+        if isinstance(block, dict):
+            if block_type is None or block.get("type") == block_type:
+                yield block
+
+
 def extract_text(content) -> str:
     """Extract text from message content (string or list of content blocks)."""
     if isinstance(content, str):
@@ -56,6 +70,25 @@ def extract_text(content) -> str:
                 parts.append(block)
         return '\n'.join(parts)
     return ""
+
+
+def extract_assistant_data(content) -> tuple[str, list[str]]:
+    """Extract text and skill names from assistant message content.
+
+    Returns (combined_text, skill_names).
+    """
+    text_parts = []
+    skills = []
+    for block in iter_content_blocks(content):
+        if block.get("type") == "text":
+            text = block.get("text", "").strip()
+            if text:
+                text_parts.append(text)
+        elif block.get("type") == "tool_use" and block.get("name") == "Skill":
+            skill_name = block.get("input", {}).get("skill", "")
+            if skill_name:
+                skills.append(skill_name)
+    return "\n".join(text_parts), skills
 
 
 def local_tz() -> timezone:

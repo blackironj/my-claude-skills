@@ -65,6 +65,64 @@ class TestExtractText(unittest.TestCase):
         self.assertEqual(shared_utils.extract_text(42), "")
 
 
+class TestIterContentBlocks(unittest.TestCase):
+    def test_filters_by_type(self):
+        content = [
+            {"type": "text", "text": "hello"},
+            {"type": "tool_use", "name": "Bash"},
+            {"type": "text", "text": "world"},
+        ]
+        result = list(shared_utils.iter_content_blocks(content, "text"))
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["text"], "hello")
+
+    def test_no_filter(self):
+        content = [
+            {"type": "text", "text": "a"},
+            {"type": "tool_use", "name": "B"},
+        ]
+        result = list(shared_utils.iter_content_blocks(content))
+        self.assertEqual(len(result), 2)
+
+    def test_non_list_yields_nothing(self):
+        self.assertEqual(list(shared_utils.iter_content_blocks("string")), [])
+        self.assertEqual(list(shared_utils.iter_content_blocks(None)), [])
+
+    def test_skips_non_dict(self):
+        content = ["raw string", {"type": "text", "text": "ok"}]
+        result = list(shared_utils.iter_content_blocks(content))
+        self.assertEqual(len(result), 1)
+
+
+class TestExtractAssistantData(unittest.TestCase):
+    def test_text_and_skills(self):
+        content = [
+            {"type": "text", "text": "I'll help with that."},
+            {"type": "tool_use", "name": "Skill", "input": {"skill": "tdd"}},
+            {"type": "tool_use", "name": "Bash", "input": {"command": "ls"}},
+            {"type": "text", "text": "Done."},
+        ]
+        text, skills = shared_utils.extract_assistant_data(content)
+        self.assertEqual(text, "I'll help with that.\nDone.")
+        self.assertEqual(skills, ["tdd"])
+
+    def test_no_skills(self):
+        content = [{"type": "text", "text": "hello"}]
+        text, skills = shared_utils.extract_assistant_data(content)
+        self.assertEqual(text, "hello")
+        self.assertEqual(skills, [])
+
+    def test_empty_content(self):
+        text, skills = shared_utils.extract_assistant_data([])
+        self.assertEqual(text, "")
+        self.assertEqual(skills, [])
+
+    def test_skips_empty_text(self):
+        content = [{"type": "text", "text": "  "}, {"type": "text", "text": "real"}]
+        text, skills = shared_utils.extract_assistant_data(content)
+        self.assertEqual(text, "real")
+
+
 class TestParseIsoTimestamp(unittest.TestCase):
     def test_z_suffix(self):
         dt = shared_utils.parse_iso_timestamp("2026-03-26T10:00:00Z")

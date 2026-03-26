@@ -29,7 +29,7 @@ __version__ = "1.4.0"
 # Import shared text cleaning utilities (single source of truth)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from shared_utils import (  # noqa: E402
-    STRIP_PATTERNS, clean_text, extract_text,
+    STRIP_PATTERNS, clean_text, extract_text, extract_assistant_data,
     parse_iso_timestamp, parse_frontmatter as shared_parse_frontmatter,
     parse_jsonl as shared_parse_jsonl, derive_title, short_id,
 )
@@ -332,23 +332,12 @@ def extract_session_data(records: list[dict]) -> dict:
                 data["conversation"].append({"role": "user", "text": text})
 
         if record_type == "assistant":
-            msg = record.get("message", {})
-            contents = msg.get("content", [])
-            text_parts = []
-            if isinstance(contents, list):
-                for item in contents:
-                    if isinstance(item, dict):
-                        if item.get("type") == "text":
-                            text = item.get("text", "").strip()
-                            if text:
-                                text_parts.append(text)
-                        elif item.get("name") == "Skill":
-                            skill_input = item.get("input", {})
-                            skill_name = skill_input.get("skill", "")
-                            if skill_name and skill_name not in data["skills"]:
-                                data["skills"].append(skill_name)
-            if text_parts:
-                combined = "\n".join(text_parts)
+            contents = record.get("message", {}).get("content", [])
+            combined, skills = extract_assistant_data(contents)
+            for skill_name in skills:
+                if skill_name not in data["skills"]:
+                    data["skills"].append(skill_name)
+            if combined:
                 # Merge consecutive assistant turns (tool chains)
                 if data["conversation"] and data["conversation"][-1]["role"] == "assistant":
                     prev = data["conversation"][-1]["text"]
