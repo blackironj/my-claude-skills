@@ -17,7 +17,7 @@ from pathlib import Path
 
 # Import shared text cleaning utilities (single source of truth)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from shared_utils import clean_text  # noqa: E402
+from shared_utils import clean_text, extract_text  # noqa: E402
 
 
 def get_user_messages(jsonl_path: Path, max_messages: int = 30) -> list[str]:
@@ -35,17 +35,10 @@ def get_user_messages(jsonl_path: Path, max_messages: int = 30) -> list[str]:
             if record.get("type") != "user" or record.get("isMeta"):
                 continue
             msg = record.get("message", {})
-            content = msg.get("content", "")
-            if isinstance(content, str):
-                cleaned = clean_text(content)
-                if cleaned and not cleaned.startswith("Base directory for this skill:"):
-                    messages.append(cleaned)
-            elif isinstance(content, list):
-                for item in content:
-                    if isinstance(item, dict) and item.get("type") == "text":
-                        cleaned = clean_text(item.get("text", ""))
-                        if cleaned and not cleaned.startswith("Base directory for this skill:"):
-                            messages.append(cleaned)
+            text = extract_text(msg.get("content", ""))
+            cleaned = clean_text(text)
+            if cleaned and not cleaned.startswith("Base directory for this skill:"):
+                messages.append(cleaned)
             if len(messages) >= max_messages:
                 break
     return messages
