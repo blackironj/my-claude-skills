@@ -28,7 +28,12 @@ __version__ = "1.4.0"
 
 # Import shared text cleaning utilities (single source of truth)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from shared_utils import STRIP_PATTERNS, clean_text  # noqa: E402
+from shared_utils import (  # noqa: E402
+    STRIP_PATTERNS, clean_text, extract_text,
+    parse_iso_timestamp, parse_frontmatter as shared_parse_frontmatter,
+    parse_jsonl as shared_parse_jsonl, derive_title,
+    SHORT_ID_LEN, short_id,
+)
 
 
 # English stop words for TF-IDF keyword extraction
@@ -119,11 +124,15 @@ def _build_corpus_df() -> dict[str, int]:
     return df
 
 
-def extract_keywords(conversation: list[dict], max_keywords: int = 3) -> list[str]:
-    """Extract top keywords using TF-IDF from conversation turns (user + assistant)."""
-    import math
+_corpus_cache: dict[str, int] | None = None
+_corpus_doc_count: int = 0
 
-    # Term frequency for this session — include both user and assistant text
+
+def extract_keywords(conversation: list[dict], max_keywords: int = 3) -> list[str]:
+    """Extract top keywords using TF-IDF from conversation turns."""
+    import math
+    global _corpus_cache, _corpus_doc_count
+
     tf: dict[str, int] = {}
     for turn in conversation:
         for word in _tokenize(turn["text"]):
@@ -131,16 +140,14 @@ def extract_keywords(conversation: list[dict], max_keywords: int = 3) -> list[st
     if not tf:
         return []
 
-    # Document frequency from corpus
-    df = _build_corpus_df()
-    n_docs = max(len(list(OUTPUT_DIR.glob("*.md"))) if OUTPUT_DIR.exists() else 0, 1)
+    if _corpus_cache is None:
+        _corpus_cache = _build_corpus_df()
+        _corpus_doc_count = max(len(list(OUTPUT_DIR.glob("*.md"))) if OUTPUT_DIR.exists() else 0, 1)
 
-    # TF-IDF scoring
     scores: dict[str, float] = {}
     for word, count in tf.items():
-        # log-normalized TF * IDF
         word_tf = 1 + math.log(count)
-        word_idf = math.log(1 + n_docs / (1 + df.get(word, 0)))
+        word_idf = math.log(1 + _corpus_doc_count / (1 + _corpus_cache.get(word, 0)))
         scores[word] = word_tf * word_idf
 
     sorted_words = sorted(scores.items(), key=lambda x: -x[1])
@@ -162,15 +169,9 @@ def detect_continuation(records: list[dict]) -> bool:
     for record in records:
         if record.get("type") != "user":
             continue
-        msg = record.get("message", {})
-        content = msg.get("content", "")
-        if isinstance(content, str) and "continued from a previous conversation" in content.lower():
+        text = extract_text(record.get("message", {}).get("content", ""))
+        if "continued from a previous conversation" in text.lower():
             return True
-        if isinstance(content, list):
-            for item in content:
-                if isinstance(item, dict) and item.get("type") == "text":
-                    if "continued from a previous conversation" in item.get("text", "").lower():
-                        return True
     return False
 
 
@@ -180,7 +181,7 @@ def find_previous_session(session_date: str, session_id: str, project_name: str 
         return None
     candidates = []
     for f in OUTPUT_DIR.glob("*.md"):
-        if f.stem.endswith(session_id[:8]):
+        if f.stem.endswith(short_id(session_id)):
             continue  # skip self
         fm = parse_frontmatter(f.read_text(encoding="utf-8"))
         fm_date = fm.get("date", "")
@@ -226,7 +227,7 @@ def _detect_sessions_dir():
 VAULT_DIR = _detect_vault_dir()
 OUTPUT_DIR = Path(os.environ["VAULT_SESSIONS_DIR"]) if os.environ.get("VAULT_SESSIONS_DIR") else VAULT_DIR / "Claude-Sessions"
 SKILLS_DIR = VAULT_DIR / ".claude" / "skills"
-LOCAL_LOCAL_SESSIONS_DIR = _detect_sessions_dir()
+LOCAL_SESSIONS_DIR = _detect_sessions_dir()
 
 PRESERVED_FIELDS = {"comments", "projects", "status", "tags", "rating", "title", "title_source"}
 PRESERVED_SECTION = "## My Notes"
@@ -237,20 +238,7 @@ ASSISTANT_TRUNCATE = 500  # Max chars per assistant turn in markdown
 # Parsing & Extraction
 # =============================================================================
 
-def parse_jsonl(file_path: Path) -> list[dict]:
-    """Parse a JSONL file into a list of records."""
-    records = []
-    if not file_path.exists():
-        return records
-    with open(file_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                try:
-                    records.append(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
-    return records
+parse_jsonl = shared_parse_jsonl
 
 
 def get_skill_relative_path(skill_name: str) -> str | None:
@@ -275,6 +263,7 @@ def path_to_wikilink(file_path: str) -> str | None:
 def extract_file_operations(records: list[dict]) -> dict:
     """Extract files created and modified from toolUseResult records."""
     files_created = []
+    files_created_set = set()
     files_modified = set()
 
     for record in records:
@@ -285,12 +274,13 @@ def extract_file_operations(records: list[dict]) -> dict:
         if not file_path:
             continue
         if result.get("type") == "create":
-            if file_path not in files_created:
+            if file_path not in files_created_set:
                 files_created.append(file_path)
+                files_created_set.add(file_path)
         elif result.get("structuredPatch") or result.get("oldString"):
             files_modified.add(file_path)
 
-    files_modified = files_modified - set(files_created)
+    files_modified -= files_created_set
     return {"created": files_created, "modified": list(files_modified)}
 
 
@@ -305,7 +295,6 @@ def extract_session_data(records: list[dict]) -> dict:
         "messages": 0,
         "conversation": [],      # ordered (role, text) turns
         "user_messages": [],     # derived later for keywords/title
-        "first_timestamp": None,
         "last_timestamp": None,
         "files_created": [],
         "files_modified": [],
@@ -323,8 +312,6 @@ def extract_session_data(records: list[dict]) -> dict:
                 if not data["date"]:
                     dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
                     data["date"] = dt.astimezone(LOCAL_TZ).strftime("%Y-%m-%d")
-                if not data["first_timestamp"]:
-                    data["first_timestamp"] = timestamp
                 data["last_timestamp"] = timestamp
 
         if record_type == "custom-title":
@@ -341,19 +328,9 @@ def extract_session_data(records: list[dict]) -> dict:
             data["messages"] += 1
             msg = record.get("message", {})
             content = msg.get("content", "")
-            text_parts = []
-            if content and isinstance(content, str):
-                if not record.get("isMeta"):
-                    text_parts.append(content)
-            elif isinstance(content, list):
-                for item in content:
-                    if isinstance(item, dict) and item.get("type") == "text":
-                        text = item.get("text", "")
-                        if text and not record.get("isMeta"):
-                            text_parts.append(text)
-            if text_parts:
-                combined = "\n".join(text_parts)
-                data["conversation"].append({"role": "user", "text": combined})
+            text = extract_text(content)
+            if text and not record.get("isMeta"):
+                data["conversation"].append({"role": "user", "text": text})
 
         if record_type == "assistant":
             msg = record.get("message", {})
@@ -395,19 +372,8 @@ def extract_session_data(records: list[dict]) -> dict:
             turn["text"] = turn["text"].strip()
     data["conversation"] = [t for t in data["conversation"] if t["text"]]
 
-    if data["user_messages"]:
-        # Always derive title from first meaningful user message (after cleaning)
-        for msg in data["user_messages"]:
-            candidate = msg.replace("\n", " ").strip()
-            # Skip skill instructions and short messages
-            if candidate.startswith("Base directory for this skill:"):
-                continue
-            if len(candidate) < 3:
-                continue
-            data["title"] = candidate[:80]
-            break
-    if not data["title"]:
-        data["title"] = "Untitled"
+    if not data["title"]:  # custom-title from JSONL takes precedence
+        data["title"] = derive_title(data["user_messages"])
 
     if not data["date"]:
         data["date"] = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d")
@@ -432,66 +398,7 @@ def extract_session_data(records: list[dict]) -> dict:
 # Frontmatter & Markdown
 # =============================================================================
 
-def parse_frontmatter(content: str) -> dict:
-    """Parse frontmatter from markdown content."""
-    frontmatter = {}
-    match = re.match(r"^---\n(.*?)\n---\n", content, re.DOTALL)
-    if not match:
-        return frontmatter
-
-    fm_text = match.group(1)
-    current_key = None
-    current_array = None
-    multiline_value = []
-    in_multiline = False
-
-    for line in fm_text.split("\n"):
-        # Handle multiline string (|)
-        if in_multiline:
-            if line.startswith("  ") or line == "":
-                multiline_value.append(line[2:] if line.startswith("  ") else "")
-                continue
-            else:
-                frontmatter[current_key] = "\n".join(multiline_value).rstrip()
-                in_multiline = False
-                multiline_value = []
-                current_array = None
-                # Fall through to re-process this line as a key-value pair
-
-        # Array item
-        if line.startswith("  - "):
-            if current_array:
-                if current_array not in frontmatter:
-                    frontmatter[current_array] = []
-                elif not isinstance(frontmatter[current_array], list):
-                    frontmatter[current_array] = []
-                frontmatter[current_array].append(line[4:].strip())
-            continue
-
-        # Key-value
-        if ":" in line and not line.startswith("  "):
-            key, value = line.split(":", 1)
-            key = key.strip()
-            value = value.strip()
-            current_key = key
-
-            if value == "|":
-                in_multiline = True
-                multiline_value = []
-                current_array = None
-            elif value == "" or value == "[]":
-                current_array = key
-                frontmatter[key] = []
-            else:
-                current_array = None
-                if value.startswith('"') and value.endswith('"'):
-                    value = value[1:-1]
-                frontmatter[key] = value
-
-    if in_multiline:
-        frontmatter[current_key] = "\n".join(multiline_value).rstrip()
-
-    return frontmatter
+parse_frontmatter = shared_parse_frontmatter
 
 
 def extract_my_notes_section(content: str) -> str | None:
@@ -508,6 +415,7 @@ def extract_my_notes_section(content: str) -> str | None:
 def generate_markdown(data: dict, session_id: str, existing_fm: dict | None = None, my_notes: str | None = None) -> str:
     """Generate markdown content from session data."""
     lines = []
+    sorted_skills = sorted(data["skills"])
 
     # Frontmatter
     lines.append("---")
@@ -542,7 +450,7 @@ def generate_markdown(data: dict, session_id: str, existing_fm: dict | None = No
 
     if data["skills"]:
         lines.append("skills:")
-        for skill in sorted(data["skills"]):
+        for skill in sorted_skills:
             lines.append(f"  - {skill}")
 
     lines.append(f"messages: {data['messages']}")
@@ -638,7 +546,7 @@ def generate_markdown(data: dict, session_id: str, existing_fm: dict | None = No
     if data["skills"]:
         lines.append("## Skills Used")
         lines.append("")
-        for skill in sorted(data["skills"]):
+        for skill in sorted_skills:
             skill_path = get_skill_relative_path(skill)
             if skill_path:
                 lines.append(f"- [{skill}]({skill_path})")
@@ -700,17 +608,17 @@ def generate_markdown(data: dict, session_id: str, existing_fm: dict | None = No
 
 def find_session_file(session_id: str) -> Path | None:
     """Find existing markdown file for a session by ID suffix."""
-    short_id = session_id[:8]
+    sid = short_id(session_id)
     if not OUTPUT_DIR.exists():
         return None
-    for f in OUTPUT_DIR.glob(f"*-{short_id}.md"):
+    for f in OUTPUT_DIR.glob(f"*-{sid}.md"):
         return f
     return None
 
 
 def get_output_path(session_id: str, date: str) -> Path:
     """Get output file path: date-shortid.md"""
-    return OUTPUT_DIR / f"{date}-{session_id[:8]}.md"
+    return OUTPUT_DIR / f"{date}-{short_id(session_id)}.md"
 
 
 def _spawn_title_gen(jsonl_path: str, md_path: str):
@@ -767,7 +675,7 @@ def sync_session(session_id: str, transcript_path: str | None = None, quiet: boo
 
     existing_fm = None
     my_notes = None
-    if existing_file and existing_file.exists():
+    if existing_file:
         content = existing_file.read_text(encoding="utf-8")
         existing_fm = parse_frontmatter(content)
         my_notes = extract_my_notes_section(content)
@@ -778,14 +686,14 @@ def sync_session(session_id: str, transcript_path: str | None = None, quiet: boo
     markdown = generate_markdown(data, session_id, existing_fm, my_notes)
 
     # File lock to prevent race condition between UserPromptSubmit and Stop hooks
-    lock_path = Path(f"/tmp/claude-sync-{session_id[:8]}.lock")
+    lock_path = Path(f"/tmp/claude-sync-{short_id(session_id)}.lock")
     try:
         lock_fd = open(lock_path, "w")
         fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except (OSError, IOError):
         # Another sync is writing this session — skip
         if not quiet:
-            print(f"Skipped (locked): {session_id[:8]}")
+            print(f"Skipped (locked): {short_id(session_id)}")
         return None
 
     try:
@@ -808,100 +716,66 @@ def sync_session(session_id: str, transcript_path: str | None = None, quiet: boo
     return output_file
 
 
-def add_comment(session_id: str, text: str) -> bool:
-    """Add a timestamped comment to a session."""
+def _update_session_file(session_id: str, updater) -> bool:
+    """Find session file, read, apply updater(content, fm) -> new_content, write back."""
     session_file = find_session_file(session_id)
     if not session_file or not session_file.exists():
-        print(f"Error: Session file not found for {session_id[:8]}", file=sys.stderr)
+        print(f"Error: Session file not found for {short_id(session_id)}", file=sys.stderr)
         return False
-
     content = session_file.read_text(encoding="utf-8")
     fm = parse_frontmatter(content)
+    new_content = updater(content, fm)
+    if new_content is None:
+        return False
+    session_file.write_text(new_content, encoding="utf-8")
+    return True
 
+
+def add_comment(session_id: str, text: str) -> bool:
+    """Add a timestamped comment to a session."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
     new_entry = f"[{timestamp}] {text}"
 
-    existing_comments = fm.get("comments", "")
-    if existing_comments:
-        new_comments = f"{existing_comments}\n{new_entry}"
-    else:
-        new_comments = new_entry
+    def updater(content, fm):
+        existing = fm.get("comments", "")
+        new_comments = f"{existing}\n{new_entry}" if existing else new_entry
+        comments_yaml = "comments: |\n" + "\n".join(f"  {line}" for line in new_comments.split("\n"))
+        if 'comments: |' in content:
+            return re.sub(r'comments: \|\n(?:  .*\n)*', comments_yaml + "\n", content)
+        elif 'comments: ""' in content:
+            return content.replace('comments: ""', comments_yaml)
+        else:
+            return content.replace("projects:", f"{comments_yaml}\nprojects:")
 
-    # Update frontmatter - replace comments field
-    comments_yaml = "comments: |\n" + "\n".join(f"  {line}" for line in new_comments.split("\n"))
-
-    if 'comments: |' in content:
-        # Replace existing multiline comments
-        pattern = r'comments: \|\n(?:  .*\n)*'
-        new_content = re.sub(pattern, comments_yaml + "\n", content)
-    elif 'comments: ""' in content:
-        # Replace empty comments
-        new_content = content.replace('comments: ""', comments_yaml)
-    else:
-        # Add comments field before projects
-        new_content = content.replace("projects:", f"{comments_yaml}\nprojects:")
-
-    session_file.write_text(new_content, encoding="utf-8")
-    print(f"Added comment: {new_entry}")
-    return True
+    if _update_session_file(session_id, updater):
+        print(f"Added comment: {new_entry}")
+        return True
+    return False
 
 
 def set_session_status(session_id: str, status: str) -> bool:
-    """Set session status in frontmatter."""
-    session_file = find_session_file(session_id)
-    if not session_file or not session_file.exists():
-        print(f"Error: Session file not found for {session_id[:8]}", file=sys.stderr)
-        return False
-
-    content = session_file.read_text(encoding="utf-8")
-    new_content = re.sub(r"status: \w+", f"status: {status}", content)
-    session_file.write_text(new_content, encoding="utf-8")
-    return True
+    def updater(content, fm):
+        return re.sub(r"status: \w+", f"status: {status}", content)
+    return _update_session_file(session_id, updater)
 
 
 def set_session_rating(session_id: str, rating: int) -> bool:
-    """Set session rating in frontmatter."""
-    session_file = find_session_file(session_id)
-    if not session_file or not session_file.exists():
-        print(f"Error: Session file not found for {session_id[:8]}", file=sys.stderr)
-        return False
-
     if not 1 <= rating <= 10:
         print(f"Error: Rating must be 1-10, got {rating}", file=sys.stderr)
         return False
-
-    content = session_file.read_text(encoding="utf-8")
-    new_content = re.sub(r"rating: (null|\d+)", f"rating: {rating}", content)
-    session_file.write_text(new_content, encoding="utf-8")
-    return True
+    def updater(content, fm):
+        return re.sub(r"rating: (null|\d+)", f"rating: {rating}", content)
+    return _update_session_file(session_id, updater)
 
 
 def set_session_tags(session_id: str, tags: list[str]) -> bool:
-    """Set session tags in frontmatter."""
-    session_file = find_session_file(session_id)
-    if not session_file or not session_file.exists():
-        print(f"Error: Session file not found for {session_id[:8]}", file=sys.stderr)
-        return False
-
-    content = session_file.read_text(encoding="utf-8")
-
-    # Build new tags yaml
-    if tags:
-        tags_yaml = "tags:\n" + "\n".join(f"  - {tag}" for tag in tags)
-    else:
-        tags_yaml = "tags: []"
-
-    # Replace existing tags section
-    if "tags:" in content:
-        # Handle both array and empty tags
-        pattern = r"tags:(?:\s*\[\]|\n(?:  - .*\n)*)"
-        new_content = re.sub(pattern, tags_yaml + "\n", content)
-    else:
-        # Add before rating
-        new_content = content.replace("rating:", f"{tags_yaml}\nrating:")
-
-    session_file.write_text(new_content, encoding="utf-8")
-    return True
+    def updater(content, fm):
+        tags_yaml = ("tags:\n" + "\n".join(f"  - {tag}" for tag in tags)) if tags else "tags: []"
+        if "tags:" in content:
+            return re.sub(r"tags:(?:\s*\[\]|\n(?:  - .*\n)*)", tags_yaml + "\n", content)
+        else:
+            return content.replace("rating:", f"{tags_yaml}\nrating:")
+    return _update_session_file(session_id, updater)
 
 
 # =============================================================================
@@ -1103,17 +977,19 @@ def cmd_resume(args):
     os.execvp("claude", cmd)
 
 
-def cmd_note(args):
-    """Note command - add timestamped note to session."""
-    session_id = args.session_id or os.environ.get("CLAUDE_SESSION_ID")
-
+def _resolve_session_id(args) -> str | None:
+    """Resolve session ID from args, env, or most recent active session."""
+    session_id = getattr(args, 'session_id', None) or os.environ.get("CLAUDE_SESSION_ID")
     if not session_id:
-        # Try current session from most recent active
         active = get_active_sessions()
         if active:
-            fm = active[0][1]
-            session_id = fm.get("session_id")
+            session_id = active[0][1].get("session_id")
+    return session_id
 
+
+def cmd_note(args):
+    """Note command - add timestamped note to session."""
+    session_id = _resolve_session_id(args)
     if not session_id:
         print("Error: No session_id. Use --session-id or set CLAUDE_SESSION_ID", file=sys.stderr)
         return 1
@@ -1128,16 +1004,9 @@ def cmd_note(args):
 
 def cmd_close(args):
     """Close command - mark session done with optional note."""
-    session_id = args.session_id or os.environ.get("CLAUDE_SESSION_ID")
-
+    session_id = _resolve_session_id(args)
     if not session_id:
-        active = get_active_sessions()
-        if active:
-            fm = active[0][1]
-            session_id = fm.get("session_id")
-
-    if not session_id:
-        print("Error: No session_id", file=sys.stderr)
+        print("Error: No session_id. Use --session-id or set CLAUDE_SESSION_ID", file=sys.stderr)
         return 1
 
     if args.text:
@@ -1147,20 +1016,13 @@ def cmd_close(args):
         add_comment(session_id, "[CLOSED]")
 
     set_session_status(session_id, "done")
-    print(f"Session {session_id[:8]} marked as done")
+    print(f"Session {short_id(session_id)} marked as done")
     return 0
 
 
 def cmd_log(args):
     """Log command - annotate session with status, tags, rating, and comment."""
-    session_id = args.session_id or os.environ.get("CLAUDE_SESSION_ID")
-
-    if not session_id:
-        active = get_active_sessions()
-        if active:
-            fm = active[0][1]
-            session_id = fm.get("session_id")
-
+    session_id = _resolve_session_id(args)
     if not session_id:
         print("Error: No session_id. Use --session-id or set CLAUDE_SESSION_ID", file=sys.stderr)
         return 1
@@ -1190,7 +1052,7 @@ def cmd_log(args):
         text = " ".join(args.text)
         add_comment(session_id, text)
 
-    print(f"Session {session_id[:8]} updated")
+    print(f"Session {short_id(session_id)} updated")
     return 0
 
 
