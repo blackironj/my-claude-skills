@@ -12,6 +12,8 @@ Parse the user's input after `/recall` and classify:
   -> Go to Step 2A
 - **Topic** - mentions a subject: "recall system", "authentication", "lab content"
   -> Go to Step 2B
+- **Project** - starts with "project": "project triton yesterday", "project security last week"
+  -> Go to Step 2D
 - **Both** - temporal + topic: "what did I do with auth yesterday"
   -> Go to Step 2A first, then scan results for the topic
 
@@ -87,6 +89,8 @@ Run all variants in parallel for fast response.
 
 **Step 2B.3: Deduplicate results** by document path. If same doc appears in multiple searches, keep the highest score. Present top 5 unique results.
 
+**Project filter:** If the user specifies both a topic and a project (e.g., "recall auth in triton"), run `ir search` normally, then filter results by reading the frontmatter `projects` field of matched files. Only present results where the project name matches.
+
 ## Step 3: Fetch Full Documents (Topic path only)
 
 For the top 3 most relevant results, read the files directly using the Read tool. File paths are included in `ir search --md` output. No separate fetch command needed — the files are local markdown in the Obsidian vault.
@@ -143,11 +147,43 @@ Options:
 Opens interactive HTML in browser. Session nodes colored by day, file nodes colored by folder.
 Tell the user the node/edge counts and what to look for (clusters, shared files).
 
+## Step 2D: Project Recall
+
+Recall sessions filtered by project name.
+
+### Step 2D.1: Parse project query
+
+Strip "project" prefix. First word = project name, remaining = date expression.
+If no date expression, default to "last 14 days".
+
+To see available projects:
+```bash
+. ~/.claude/env && python3 ~/.claude/skills/recall/scripts/recall-day.py projects
+```
+
+### Step 2D.2: List project sessions
+
+```bash
+. ~/.claude/env && python3 ~/.claude/skills/recall/scripts/recall-day.py list DATE_EXPR --name PROJECT_NAME
+```
+
+For full history (no date limit):
+```bash
+. ~/.claude/env && python3 ~/.claude/skills/recall/scripts/recall-day.py list --name PROJECT_NAME --full-history
+```
+
+### Step 2D.3: Present results
+
+Same as Step 4 (temporal). Show script output as-is, add expand option, add One Thing.
+
 ## CLI Reference (Exact Supported Flags)
 
 **Do NOT invent or guess flags. Only use flags listed below.**
 
 **All commands MUST be prefixed with `. ~/.claude/env &&`**
+
+### `recall-day.py projects`
+No flags. Lists all projects with session counts.
 
 ### `recall-day.py list DATE_EXPR`
 | Flag | Type | Default | Description |
@@ -155,6 +191,8 @@ Tell the user the node/edge counts and what to look for (clusters, shared files)
 | `--min-msgs N` | int | 3 | Filter noise by minimum user messages |
 | `--project PATH` | str | (all) | Limit to specific project path |
 | `--all-projects` | flag | false | Scan all projects |
+| `--name NAME` | str | (all) | Filter by project name (substring match) |
+| `--full-history` | flag | false | Show full history (no date limit, use with --name) |
 
 ### `recall-day.py expand SESSION_ID`
 | Flag | Type | Default | Description |
