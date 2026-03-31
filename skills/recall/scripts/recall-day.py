@@ -514,6 +514,39 @@ def cmd_expand(args):
     print(f"\n{msg_count} user messages total")
 
 
+def cmd_projects(args):
+    """List all known projects with session counts."""
+    # Local projects from JSONL
+    index = build_project_index()
+    counts: dict[str, int] = {}
+    for proj_dir, pname in index.items():
+        jsonl_count = len(list(proj_dir.glob("*.jsonl")))
+        counts[pname] = counts.get(pname, 0) + jsonl_count
+
+    # Supplement with Obsidian (remote-only projects)
+    if OBSIDIAN_SESSIONS and OBSIDIAN_SESSIONS.exists():
+        local_projects = set(counts.keys())
+        for md_file in OBSIDIAN_SESSIONS.glob("*.md"):
+            fm = parse_frontmatter_file(md_file)
+            if not fm:
+                continue
+            fm_projects = fm.get('projects', [])
+            if not isinstance(fm_projects, list):
+                continue
+            for p in fm_projects:
+                if p not in local_projects:
+                    counts[p] = counts.get(p, 0) + 1
+
+    if not counts:
+        print("No projects found.")
+        return
+
+    print("\nProjects:\n")
+    for pname, count in sorted(counts.items(), key=lambda x: -x[1]):
+        print(f" {count:3}  {pname}")
+    print(f"\n{len(counts)} projects total")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Recall sessions by date from Claude Code JSONL files',
@@ -538,6 +571,9 @@ def main():
     p_expand.add_argument('--all-projects', action='store_true', help='Scan all projects')
     p_expand.add_argument('--max-msgs', type=int, default=50, help='Max messages to show (default: 50)')
 
+    # projects
+    sub.add_parser('projects', help='List all projects with session counts')
+
     args = parser.parse_args()
 
     if args.command == 'list':
@@ -554,6 +590,8 @@ def main():
         cmd_list(args)
     elif args.command == 'expand':
         cmd_expand(args)
+    elif args.command == 'projects':
+        cmd_projects(args)
 
 
 if __name__ == '__main__':
