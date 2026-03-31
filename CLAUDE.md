@@ -37,7 +37,7 @@ cp -r skills/ideate ~/.claude/skills/ideate
 # (restart session or /reload-plugins)
 ```
 
-For script-based skills (recall, sync-claude-sessions), the main script `claude-sessions` is not in this repo — it lives at `~/.claude/skills/sync-claude-sessions/scripts/claude-sessions`. When pulling updates from this repo, copy changed files to the installed location.
+For script-based skills (recall, sync-claude-sessions), edit in this repo then copy to `~/.claude/skills/`. The `claude-sessions` script lives at `skills/sync-claude-sessions/scripts/claude-sessions`.
 
 ## Skill Types
 

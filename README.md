@@ -20,6 +20,7 @@ Features:
 Load context from previous sessions. Three modes:
 
 - **Temporal** (date-based): `/recall yesterday`, `/recall last week`
+- **Project** (filter by project): `/recall project triton yesterday`, `/recall projects`
 - **Topic** (BM25 search): `/recall authentication`, `/recall 인증 작업` (requires [ir](https://github.com/vlwkaos/ir))
 - **Graph** (visualization): `/recall graph last week` (requires networkx, pyvis)
 
