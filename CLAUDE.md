@@ -17,6 +17,8 @@ skills/
   sync-claude-sessions/
     SKILL.md                             — Session export skill
     scripts/update-title.py              — Title update script
+    scripts/claude-sessions              — Main sync script
+    schema/tags.yaml                     — Tag schema
     workflows/setup.md                   — Setup guide
     workflows/log-session.md             — Session logging workflow
   shared_utils.py                        — Shared Python utilities across skills
@@ -24,20 +26,13 @@ hooks/
   index-sessions.sh                      — SessionEnd hook for ir auto-indexing
 ```
 
-## Development Workflow
+## Installation
+
+Skills are installed by copying to `~/.claude/skills/`. Symlink recommended for development:
 
 ```bash
-# 1. Edit skill in this repo
-vim skills/ideate/SKILL.md
-
-# 2. Copy to installed location
-cp -r skills/ideate ~/.claude/skills/ideate
-
-# 3. Verify — skill list should show changes
-# (restart session or /reload-plugins)
+ln -s ~/workspace/my/claude-code-skills/skills/* ~/.claude/skills/
 ```
-
-For script-based skills (recall, sync-claude-sessions), edit in this repo then copy to `~/.claude/skills/`. The `claude-sessions` script lives at `skills/sync-claude-sessions/scripts/claude-sessions`.
 
 ## Skill Types
 
@@ -45,8 +40,6 @@ For script-based skills (recall, sync-claude-sessions), edit in this repo then c
 |------|---------|----------|
 | Markdown-only | ideate, save-doc | `SKILL.md` only |
 | Script-based | recall, sync-claude-sessions | `SKILL.md` + `scripts/` + `workflows/` |
-
-Markdown-only skills just need `SKILL.md` copied. Script-based skills need the entire directory.
 
 ## Skill Conventions
 
@@ -64,15 +57,12 @@ Skills depend on `~/.claude/env` for vault paths:
 - `DOCS_DIR` — Document output for save-doc
 - `MACHINE_NAME` — Machine identifier in session frontmatter
 
-## Gotchas
-
-- **Repo ≠ installed**: Editing here does NOT auto-apply. Must copy to `~/.claude/skills/` manually.
-- **`docs/` is gitignored**: `docs/superpowers/`, `docs/specs/`, `docs/plans/` are in `.gitignore` — they're local superpowers artifacts, not tracked.
-- **Root `sync-claude-sessions/`**: Legacy duplicate of `skills/sync-claude-sessions/scripts/`. Ignore it.
-- **`shared_utils.py` location**: Lives at `skills/shared_utils.py`, not inside any skill directory. Imported by recall scripts.
-
 ## Python Scripts
 
 - Use `shared_utils.py` for common utilities
 - Scripts are invoked via `. ~/.claude/env && python ~/.claude/skills/<name>/scripts/<script>`
 - Python 3.10+ required
+
+## Gotchas
+
+- **`docs/` is gitignored**: `docs/superpowers/`, `docs/specs/`, `docs/plans/` are local superpowers artifacts, not tracked.

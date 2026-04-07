@@ -1,14 +1,13 @@
 # my-claude-skills
 
-Claude Code skills for session memory and recall with Obsidian integration. Adapted from [ArtemXTech/personal-os-skills](https://github.com/ArtemXTech/personal-os-skills).
+Claude Code skills for session memory and recall with Obsidian integration.
 
 ## Skills
 
 ### sync-claude-sessions
 
-Export Claude Code conversations to Obsidian markdown with live sync via hooks. Auto-syncs on every prompt submission and response completion.
+Export Claude Code conversations to Obsidian markdown with live sync via hooks.
 
-Features:
 - Real-time session sync to `Claude-Sessions/` in your Obsidian vault
 - Frontmatter with metadata (date, title, skills, messages, status, tags, rating)
 - Korean + English keyword extraction for tags (via ir's Korean preprocessor)
@@ -17,7 +16,7 @@ Features:
 
 ### recall
 
-Load context from previous sessions. Three modes:
+Load context from previous sessions. Four modes:
 
 - **Temporal** (date-based): `/recall yesterday`, `/recall last week`
 - **Project** (filter by project): `/recall project triton yesterday`, `/recall projects`
@@ -28,11 +27,9 @@ Ends every recall with **One Thing** — the single highest-leverage next action
 
 ### ideate
 
-Lightweight collaborative ideation skill. Alternative to superpowers:brainstorming for open-ended exploration without forced spec/plan/implementation pipeline.
+Lightweight collaborative ideation. Alternative to superpowers:brainstorming for open-ended exploration.
 
 - Natural dialogue, not process checklist
-- Diverge freely, converge when the user is ready
-- No mandatory output — the conversation itself is the value
 - Triggers: `/ideate`, "같이 생각해보자", "이건 어때", "explore ideas"
 
 ### save-doc
@@ -49,18 +46,27 @@ Save session content (analysis, specs, designs) to Obsidian vault.
 
 ## Installation
 
-### Step 1: Install the plugin
+### Step 1: Install skills
 
 ```bash
-claude plugin add --git https://github.com/blackironj/my-claude-skills.git
+git clone https://github.com/blackironj/my-claude-skills.git
+cd my-claude-skills
+
+# Symlink (recommended — edits apply immediately)
+ln -s "$(pwd)/skills/"* ~/.claude/skills/
+
+# Or copy
+cp -r skills/recall ~/.claude/skills/
+cp -r skills/sync-claude-sessions ~/.claude/skills/
+cp -r skills/save-doc ~/.claude/skills/
+cp -r skills/ideate ~/.claude/skills/
+cp skills/shared_utils.py ~/.claude/skills/
 ```
 
 ### Step 2: Create `~/.claude/env` (per machine)
 
 ```bash
 cat > ~/.claude/env << 'EOF'
-# Claude Code environment — sourced by all hooks
-# Change this per machine
 export VAULT_DIR="/path/to/your/obsidian-vault"
 export VAULT_SESSIONS_DIR="$VAULT_DIR/ai-agent/Claude-Sessions"
 export DOCS_DIR="$VAULT_DIR/workspace"
@@ -75,9 +81,7 @@ EOF
 | `VAULT_SESSIONS_DIR` | Where Claude session markdown files are synced |
 | `DOCS_DIR` | Where `/save-doc` writes documents |
 | `CLAUDE_SESSIONS_TZ` | Timezone for session timestamps (default: `Asia/Seoul`) |
-| `MACHINE_NAME` | Machine identifier written to session frontmatter (optional) |
-
-This is the only file that differs per PC. All hooks source it automatically.
+| `MACHINE_NAME` | Machine identifier in session frontmatter (optional) |
 
 ### Step 3: Add hooks to `~/.claude/settings.json`
 
@@ -124,59 +128,24 @@ This is the only file that differs per PC. All hooks source it automatically.
 
 ### Step 4: (Optional) Install ir for topic search
 
-[ir](https://github.com/vlwkaos/ir) enables BM25-based topic search with Korean support. Skip this step if you only need temporal recall.
-
-**Prerequisites:** Rust 1.80+, libclang-dev, cmake
+[ir](https://github.com/vlwkaos/ir) enables BM25-based topic search with Korean support. Skip if you only need temporal recall.
 
 ```bash
-# Clone and build ir
 cd ~/workspace
 git clone https://github.com/vlwkaos/ir.git && cd ir
 cargo install --path . --no-default-features --features llama-openmp  # Linux
 # cargo install --path .  # macOS (Metal auto-detected)
 
 # Korean preprocessor
-# Linux: build from source
 cd preprocessors/ko/lindera-tokenize
 cargo install --path .
 ir preprocessor add ko lindera-tokenize
-# macOS: ir preprocessor install ko
 
 # Register collection and build index
 source ~/.claude/env
 ir collection add sessions "$VAULT_SESSIONS_DIR/"
 ir preprocessor bind ko sessions
 ir update
-```
-
-ir is installed per machine. The Obsidian vault syncs across PCs; ir index is local.
-
-### Manual installation (alternative)
-
-If you prefer not to use the plugin system:
-
-```bash
-git clone https://github.com/blackironj/my-claude-skills.git
-cd my-claude-skills
-
-# Install skills
-cp -r skills/recall ~/.claude/skills/
-cp -r skills/sync-claude-sessions ~/.claude/skills/
-cp -r skills/save-doc ~/.claude/skills/
-cp -r skills/ideate ~/.claude/skills/
-
-# Install SessionEnd hook
-mkdir -p ~/.claude/hooks
-cp hooks/index-sessions.sh ~/.claude/hooks/
-chmod +x ~/.claude/hooks/index-sessions.sh
-```
-
-Then follow Steps 2-4 above.
-
-## Updating
-
-```bash
-claude plugin update my-claude-skills
 ```
 
 ## License
