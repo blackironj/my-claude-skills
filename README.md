@@ -133,15 +133,11 @@ EOF
 [ir](https://github.com/vlwkaos/ir) enables BM25-based topic search with Korean support. Skip if you only need temporal recall.
 
 ```bash
-cd ~/workspace
-git clone https://github.com/vlwkaos/ir.git && cd ir
-cargo install --path . --no-default-features --features llama-openmp  # Linux
-# cargo install --path .  # macOS (Metal auto-detected)
+cargo install --git https://github.com/vlwkaos/ir --tag v0.11.0 --no-default-features --features llama-openmp  # Linux
+# cargo install --git https://github.com/vlwkaos/ir --tag v0.11.0  # macOS (Metal auto-detected)
 
-# Korean preprocessor
-cd preprocessors/ko/lindera-tokenize
-cargo install --path .
-ir preprocessor add ko lindera-tokenize
+# Korean preprocessor (cross-platform since v0.11.0)
+ir preprocessor install ko
 
 # Register collection and build index
 source ~/.claude/env

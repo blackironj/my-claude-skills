@@ -24,17 +24,12 @@ No custom setup needed for temporal recall - every Claude Code user has JSONL fi
 Topic search requires [ir](https://github.com/vlwkaos/ir). If `ir` is not installed, topic queries will not work (temporal and graph still work).
 
 ```bash
-# 1. Build ir from source (Rust 1.80+, libclang-dev, cmake)
-cd ~/workspace
-git clone https://github.com/vlwkaos/ir.git && cd ir
-cargo install --path . --no-default-features --features llama-openmp  # Linux
-# cargo install --path .  # macOS (Metal auto-detected)
+# 1. Install ir (Rust 1.80+, libclang-dev, cmake)
+cargo install --git https://github.com/vlwkaos/ir --tag v0.11.0 --no-default-features --features llama-openmp  # Linux
+# cargo install --git https://github.com/vlwkaos/ir --tag v0.11.0  # macOS (Metal auto-detected)
 
-# 2. Korean preprocessor (optional, for CJK search)
-cd preprocessors/ko/lindera-tokenize  # Linux: build from source
-cargo install --path .
-ir preprocessor add ko lindera-tokenize
-# macOS: ir preprocessor install ko
+# 2. Korean preprocessor (optional, for CJK search; cross-platform since v0.11.0)
+ir preprocessor install ko
 
 # 3. Register collection
 ir collection add sessions "$VAULT_SESSIONS_DIR/"

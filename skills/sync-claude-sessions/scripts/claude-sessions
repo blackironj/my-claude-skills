@@ -15,6 +15,7 @@ import fcntl
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -55,13 +56,31 @@ _STOP_WORDS = {
 }
 
 
-def _find_ko_preprocessor() -> str | None:
-    """Find ir's Korean preprocessor binary."""
-    for p in [
-        Path.home() / ".cargo" / "bin" / "lindera-tokenize",
-    ]:
-        if p.exists() and os.access(str(p), os.X_OK):
-            return str(p)
+def _find_ko_preprocessor() -> list[str] | None:
+    """Return argv for ir's registered Korean preprocessor.
+
+    Reads ir's config.yml (written by `ir preprocessor install ko`) so the
+    sync path tokenizes exactly the way the BM25 index does.
+    """
+    config_home = Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
+    config_path = config_home / "ir" / "config.yml"
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    block = re.search(r"^preprocessors:\s*\n((?:[ \t]+.+\n?)+)", text, re.MULTILINE)
+    if not block:
+        return None
+    for line in block.group(1).splitlines():
+        m = re.match(r"\s+ko:\s+(.+)$", line)
+        if not m:
+            continue
+        try:
+            # posix=False preserves literal quotes so the JSON `--token-filter`
+            # value survives intact as a single argv element.
+            return shlex.split(m.group(1), posix=False)
+        except ValueError:
+            return None
     return None
 
 
@@ -74,7 +93,7 @@ _EN_WORD_RE = re.compile(r'[a-zA-Z]{2,}')
 
 
 def _tokenize_korean_batch(texts: list[str]) -> list[list[str]]:
-    """Tokenize multiple texts via a single lindera-tokenize subprocess call.
+    """Tokenize multiple texts via a single lindera subprocess call.
 
     lindera preserves input-line to output-line 1:1 correspondence, so we
     flatten each text to a single line (whitespace → space) and join with \\n.
@@ -103,7 +122,7 @@ def _tokenize_korean_batch(texts: list[str]) -> list[list[str]]:
         total_bytes = sum(len(p.encode('utf-8')) for p in prepared)
         timeout = 10 + total_bytes // 102400
         result = subprocess.run(
-            [_KO_PREPROCESSOR],
+            _KO_PREPROCESSOR,
             input='\n'.join(prepared),
             capture_output=True,
             text=True,

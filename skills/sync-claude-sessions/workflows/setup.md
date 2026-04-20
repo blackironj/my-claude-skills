@@ -85,14 +85,11 @@ chmod +x ~/.claude/hooks/index-sessions.sh
 Install [ir](https://github.com/vlwkaos/ir) for keyword search across sessions. ir is installed locally per machine — the Obsidian vault (with `Claude-Sessions/`) syncs across PCs via Obsidian Sync, but ir and its index must be set up on each machine.
 
 ```bash
-# Build from source (Rust 1.80+ required)
-cd ~/workspace/ir
-cargo install --path .
+# Install ir (Rust 1.80+ required)
+cargo install --git https://github.com/vlwkaos/ir --tag v0.11.0
 
-# Korean preprocessor (build from source on Linux)
-cd ~/workspace/ir/preprocessors/ko/lindera-tokenize
-cargo install --path .
-ir preprocessor add ko lindera-tokenize
+# Korean preprocessor (cross-platform since v0.11.0)
+ir preprocessor install ko
 
 # Register collection
 ir collection add sessions "$VAULT_SESSIONS_DIR/"
