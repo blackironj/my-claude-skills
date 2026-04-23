@@ -44,11 +44,13 @@ ln -s "$(pwd)/skills/"* ~/.claude/skills/
 
 ## CLI Commands
 
-- `scripts/claude-sessions {sync|export|resume|note|close|list|log}` — session management
-- `scripts/backfill-daily.py [--dry-run] [--date YYYY-MM-DD]` — backfill sessions into daily notes
-- `scripts/recall-day.py` — date-based temporal recall
-- `scripts/session-graph.py` — graph visualization (needs `networkx`, `pyvis`)
-- Recall modes: temporal / project / topic (BM25 via `ir`) / graph
+All scripts are invoked from their installed path: `. ~/.claude/env && python ~/.claude/skills/<skill>/scripts/<script>`
+
+- `claude-sessions {sync|export|resume|note|close|list|log}` — session management (`sync --daily-append` appends to Obsidian daily note)
+- `backfill-daily.py [--dry-run] [--date YYYY-MM-DD]` — backfill sessions into Obsidian daily notes
+- `recall-day.py` — date-based temporal recall
+- `session-graph.py` — graph visualization (needs `networkx`, `pyvis`)
+- Recall modes: temporal / project / topic (BM25 via `ir`, Obsidian search fallback) / graph
 
 ## Skill Conventions
 
@@ -74,9 +76,23 @@ Skills depend on `~/.claude/env` for vault paths:
 - Scripts are invoked via `. ~/.claude/env && python ~/.claude/skills/<name>/scripts/<script>`
 - Python 3.10+ required
 
+## Hooks
+
+- **UserPromptSubmit**: `claude-sessions sync` (10s timeout) — live session sync
+- **Stop**: `claude-sessions sync --daily-append` (15s timeout, async) — final sync + daily note append
+- **SessionEnd**: `index-sessions.sh` (5s timeout) — ir index update if available
+
+## Obsidian Integration
+
+- **Daily Notes**: Stop hook appends session summary to `Daily Notes/YYYY-MM-DD.md` under `## Claude Sessions` section
+- **Obsidian Search**: Recall topic queries fall back to `$OBSIDIAN_CLI search` when ir is unavailable or results are sparse
+- **Properties**: save-doc can set Obsidian properties via `$OBSIDIAN_CLI property:set` after saving
+- **Sessions Dashboard**: `sessions-dashboard.base` in Claude-Sessions folder provides database views (All / Active / By Project)
+
 ## Gotchas
 
 - **`docs/` is gitignored**: `docs/superpowers/`, `docs/specs/`, `docs/plans/` are local superpowers artifacts, not tracked.
-- **Sync hook timeout**: `UserPromptSubmit` + `Stop` hooks run `claude-sessions sync` with a 10s budget. Lindera-tokenize calls are batched (commit `af7a5cf`) — don't reintroduce per-file subprocess loops.
-- **ir is optional but indexed via SessionEnd hook**: `hooks/index-sessions.sh` runs `ir update` only if `ir` is on PATH. Topic recall silently falls back to temporal mode when ir is missing.
+- **Sync hook timeout**: `UserPromptSubmit` + `Stop` hooks run `claude-sessions sync`. Lindera-tokenize calls are batched (commit `af7a5cf`) — don't reintroduce per-file subprocess loops.
+- **ir is optional but indexed via SessionEnd hook**: `hooks/index-sessions.sh` runs `ir update` only if `ir` is on PATH. Topic recall falls back to Obsidian search, then temporal mode.
+- **Daily note format**: `_daily_append()` writes directly to filesystem (not via Obsidian CLI) under `## Claude Sessions` heading. Same format as `backfill-daily.py`.
 - **No test suite**: unit tests were removed (commit `ac22317`) — verify changes by running the scripts directly against a live vault.

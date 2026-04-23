@@ -1,6 +1,6 @@
 # my-claude-skills
 
-Claude Code skills for session memory and recall with Obsidian integration.
+Claude Code skills for session memory, recall, and Obsidian integration — with daily note sync, vault search, and session dashboards.
 
 ## Skills
 
@@ -12,6 +12,9 @@ Export Claude Code conversations to Obsidian markdown with live sync via hooks.
 - Frontmatter with metadata (date, title, skills, messages, status, tags, rating)
 - Korean + English keyword extraction for tags (via ir's Korean preprocessor)
 - `## My Notes` section preserved across syncs
+- Auto-appends session summary to Obsidian daily notes (`Daily Notes/YYYY-MM-DD.md`)
+- Backfill tool to populate daily notes from existing sessions
+- Sessions dashboard (`.base` file) with All / Active / By Project views
 - Commands: `sync`, `export`, `resume`, `note`, `close`, `list`, `log`
 
 ### recall
@@ -20,7 +23,7 @@ Load context from previous sessions. Four modes:
 
 - **Temporal** (date-based): `/recall yesterday`, `/recall last week`
 - **Project** (filter by project): `/recall project triton yesterday`, `/recall projects`
-- **Topic** (BM25 search): `/recall authentication`, `/recall 인증 작업` (requires [ir](https://github.com/vlwkaos/ir))
+- **Topic** (BM25 search + Obsidian search fallback): `/recall authentication`, `/recall 인증 작업` ([ir](https://github.com/vlwkaos/ir) optional — falls back to Obsidian search)
 - **Graph** (visualization): `/recall graph last week` (requires networkx, pyvis)
 
 Ends every recall with **One Thing** — the single highest-leverage next action.
@@ -36,14 +39,16 @@ Lightweight collaborative ideation. Alternative to superpowers:brainstorming for
 
 Save session content (analysis, specs, designs) to Obsidian vault under `$DOCS_DIR`.
 
+- Auto-sets Obsidian properties (type, date, project) via CLI when available
 - Triggers: `/save-doc`, "저장해줘", "vault에 넣어줘", "save this", "export to vault"
 
 ## Requirements
 
 - Python 3.10+
 - Claude Code with hooks support
-- Obsidian vault
-- (Optional) [ir](https://github.com/vlwkaos/ir) for topic search — needs Rust 1.80+, `libclang-dev`, `cmake`
+- Obsidian vault (with Daily Notes core plugin enabled for daily note sync)
+- (Optional) Obsidian desktop with CLI enabled — for vault search fallback and property tagging
+- (Optional) [ir](https://github.com/vlwkaos/ir) for BM25 topic search — needs Rust 1.80+, `libclang-dev`, `cmake`
 - (Optional) `pip install networkx pyvis` for graph visualization
 
 ## Installation
@@ -74,6 +79,7 @@ export VAULT_SESSIONS_DIR="$VAULT_DIR/ai-agent/Claude-Sessions"
 export DOCS_DIR="$VAULT_DIR/workspace"
 export CLAUDE_SESSIONS_TZ="Asia/Seoul"
 export MACHINE_NAME="home-pc"
+export OBSIDIAN_CLI="/path/to/Obsidian.com"  # optional, enables daily notes and vault search
 EOF
 ```
 
@@ -84,6 +90,7 @@ EOF
 | `DOCS_DIR` | Where `/save-doc` writes documents |
 | `CLAUDE_SESSIONS_TZ` | Timezone for session timestamps (default: `Asia/Seoul`) |
 | `MACHINE_NAME` | Machine identifier in session frontmatter (optional) |
+| `OBSIDIAN_CLI` | Path to Obsidian desktop CLI (optional — enables daily notes, vault search, properties) |
 
 ### Step 3: Add hooks to `~/.claude/settings.json`
 
@@ -107,8 +114,9 @@ EOF
         "hooks": [
           {
             "type": "command",
-            "command": ". ~/.claude/env && python ~/.claude/skills/sync-claude-sessions/scripts/claude-sessions sync",
-            "timeout": 10
+            "command": ". ~/.claude/env && python ~/.claude/skills/sync-claude-sessions/scripts/claude-sessions sync --daily-append",
+            "timeout": 15,
+            "async": true
           }
         ]
       }
@@ -118,8 +126,8 @@ EOF
         "hooks": [
           {
             "type": "command",
-            "command": "bash ~/.claude/hooks/index-sessions.sh >> ~/.claude/hooks/index-sessions.log 2>&1",
-            "timeout": 30
+            "command": "nohup bash ~/.claude/hooks/index-sessions.sh >> ~/.claude/hooks/index-sessions.log 2>&1 &",
+            "timeout": 5
           }
         ]
       }
