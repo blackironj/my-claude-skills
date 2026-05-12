@@ -79,7 +79,7 @@ Skills depend on `~/.claude/env` for vault paths:
 
 ## Hooks
 
-- **UserPromptSubmit**: `claude-sessions sync` (10s timeout) — live session sync
+- **UserPromptSubmit**: `claude-sessions sync` (10s timeout) — live session sync, skipped when `$CLAUDE_EFFORT=low`
 - **Stop**: `claude-sessions sync --daily-append` (15s timeout, async) — final sync + daily note append
 - **SessionEnd**: `index-sessions.sh` (5s timeout) — ir index update if available
 
