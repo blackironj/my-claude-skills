@@ -522,13 +522,11 @@ def generate_markdown(data: dict, session_id: str, existing_fm: dict | None = No
         title = data["title"] or "Untitled"
         title_source = "auto"
 
-    title_escaped = title.replace('"', '\\"')
-    lines.append(f'title: "{title_escaped}"')
+    lines.append(f"title: {json.dumps(title, ensure_ascii=False)}")
     lines.append(f"title_source: {title_source}")
 
     if data["summary"]:
-        summary_escaped = data["summary"].replace('"', '\\"').replace("\n", " ")
-        lines.append(f'summary: "{summary_escaped}"')
+        lines.append(f'summary: {json.dumps(data["summary"].replace(chr(10), " "), ensure_ascii=False)}')
 
     if data["skills"]:
         lines.append("skills:")

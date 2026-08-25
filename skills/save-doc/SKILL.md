@@ -65,6 +65,14 @@ Wait for user confirmation. If user says different path, use that.
 Follow the existing document pattern:
 
 ```markdown
+---
+date: YYYY-MM-DD
+type: doc
+project: PROJECT_NAME
+tags:
+  - one-per-line
+  - kebab-case
+---
 # Title
 
 **Date:** YYYY-MM-DD
@@ -80,7 +88,11 @@ Content organized with tables, code blocks as appropriate
 - Use tables for structured data (benchmarks, comparisons)
 - Include environment/setup info when relevant
 - Korean or English — match whatever the session used
-- No Obsidian frontmatter needed (plain markdown)
+- Frontmatter: `date`, `type: doc`, `project`, and `tags` — every existing doc has it
+- **`tags` MUST be a YAML list, one tag per line.** `tags: a,b,c` parses as a single
+  string, and Obsidian renders it as one invalid tag (commas and spaces are not legal
+  tag characters) — it shows underlined in red. Legal characters are letters, digits,
+  `_`, `-`, `/`; a tag cannot be all digits
 
 Resolve the full path first, then save with the Write tool:
 
@@ -107,7 +119,8 @@ After writing the file, tag it with Obsidian properties for discoverability:
 - `type`: always `doc`
 - `date`: the document date (YYYY-MM-DD)
 - `project`: project name if identifiable from path or context (skip if unclear)
-- `tags`: comma-separated content categories (e.g., `benchmark,performance`) — only if clearly applicable
+- `tags`: content categories — only if clearly applicable. In the file itself these are a
+  YAML list (see Step 4); the CLI takes them comma-separated and splits them itself
 
 If `$OBSIDIAN_CLI` is not set or Obsidian is not running, skip this step silently.
 

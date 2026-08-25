@@ -72,6 +72,20 @@ def extract_text(content) -> str:
     return ""
 
 
+_SKILL_NAME_RE = re.compile(r"[A-Za-z0-9_.:/-]+")
+
+
+def clean_skill_name(raw: str) -> str:
+    """The leading skill-name-shaped run of a Skill tool's `skill` input.
+
+    A malformed call can carry markup and newlines in that field, and writing it
+    verbatim put a bare line inside the frontmatter's skills list, which then
+    failed to parse.
+    """
+    m = _SKILL_NAME_RE.match((raw or "").strip().split("\n")[0].strip())
+    return m.group(0) if m else ""
+
+
 def extract_assistant_data(content) -> tuple[str, list[str]]:
     """Extract text and skill names from assistant message content.
 
@@ -85,7 +99,7 @@ def extract_assistant_data(content) -> tuple[str, list[str]]:
             if text:
                 text_parts.append(text)
         elif block.get("type") == "tool_use" and block.get("name") == "Skill":
-            skill_name = block.get("input", {}).get("skill", "")
+            skill_name = clean_skill_name(block.get("input", {}).get("skill", ""))
             if skill_name:
                 skills.append(skill_name)
     return "\n".join(text_parts), skills
@@ -158,8 +172,15 @@ def parse_frontmatter(content: str) -> dict:
                 frontmatter[key] = []
             else:
                 current_array = None
-                if value.startswith('"') and value.endswith('"'):
-                    value = value[1:-1]
+                if value.startswith('"') and value.endswith('"') and len(value) > 1:
+                    # Unescape rather than just stripping the quotes. Stripping alone
+                    # leaves a literal backslash that the writer escapes again, so a
+                    # title holding one " grew a backslash on every sync until the
+                    # frontmatter stopped parsing.
+                    try:
+                        value = json.loads(value)
+                    except json.JSONDecodeError:
+                        value = value[1:-1]
                 frontmatter[key] = value
 
     if in_multiline:
