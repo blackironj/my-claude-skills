@@ -51,6 +51,16 @@ Check existing Korean prose (vault docs, specs, pasted text) against the [fluent
 - Change-rate gate: warns over 30%, restores the original over 50%
 - Triggers: `/fluent-korean-review <file>`, "fluent-korean 규칙으로 검토", "한국어 문장 점검해줘"
 
+### fluent-korean-subagent hook
+
+`hooks/fluent-korean-subagent.py` is a `PreToolUse` hook for the `Agent` tool. Output styles live in the parent session's system prompt and never reach subagents, so a Korean subagent prompt loses the fluent-korean rules on hand-off. The hook appends the body of `~/.claude/output-styles/fluent-korean.md` to prompts that are mostly Hangul (about 7 KB per Korean subagent call) and leaves English prompts alone.
+
+```bash
+ln -s "$(pwd)/hooks/fluent-korean-subagent.py" ~/.claude/hooks/
+```
+
+Register it in `~/.claude/settings.json` as shown in Step 3 below.
+
 ## Requirements
 
 - Python 3.10+
@@ -107,6 +117,18 @@ EOF
 ```json
 {
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/fluent-korean-subagent.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [

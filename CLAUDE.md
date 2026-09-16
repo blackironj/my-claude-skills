@@ -28,6 +28,7 @@ skills/
   shared_utils.py                        — Shared Python utilities across skills
 hooks/
   index-sessions.sh                      — SessionEnd hook for ir auto-indexing
+  fluent-korean-subagent.py              — PreToolUse(Agent) hook: append fluent-korean rules to Korean subagent prompts
 ```
 
 ## Installation
@@ -85,6 +86,7 @@ Skills depend on `~/.claude/env` for vault paths:
 - **UserPromptSubmit**: `claude-sessions sync` (10s timeout) — live session sync, skipped when `$CLAUDE_EFFORT=low`
 - **Stop**: `claude-sessions sync --daily-append` (15s timeout, async) — final sync + daily note append
 - **SessionEnd**: `index-sessions.sh` (5s timeout) — ir index update if available
+- **PreToolUse** (matcher `Agent`): `fluent-korean-subagent.py` (5s timeout) — when the subagent prompt is mostly Hangul, returns `updatedInput` with the body of `~/.claude/output-styles/fluent-korean.md` appended. Output styles never reach subagents; this hook is the only way the rules do. Fails open (exit 0, no output) on any error.
 
 ## Obsidian Integration
 
