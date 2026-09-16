@@ -14,6 +14,9 @@ skills/
     scripts/common.py                    — Shared recall utilities
     workflows/recall.md                  — Routing logic and presentation rules
   save-doc/SKILL.md                      — Save content to Obsidian vault (markdown-only)
+  fluent-korean-review/
+    SKILL.md                             — Check Korean prose against the fluent-korean rules
+    scripts/change_rate.py               — Change-rate gate (warn >30%, stop >50%)
   sync-claude-sessions/
     SKILL.md                             — Session export skill
     scripts/update-title.py              — Title update script
@@ -40,7 +43,7 @@ ln -s "$(pwd)/skills/"* ~/.claude/skills/
 | Type | Example | Contains |
 |------|---------|----------|
 | Markdown-only | ideate, save-doc | `SKILL.md` only |
-| Script-based | recall, sync-claude-sessions | `SKILL.md` + `scripts/` + `workflows/` |
+| Script-based | recall, sync-claude-sessions, fluent-korean-review | `SKILL.md` + `scripts/` (+ `workflows/`) |
 
 ## CLI Commands
 

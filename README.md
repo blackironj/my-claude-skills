@@ -42,6 +42,15 @@ Save session content (analysis, specs, designs) to Obsidian vault under `$DOCS_D
 - Auto-sets Obsidian properties (type, date, project) via CLI when available
 - Triggers: `/save-doc`, "저장해줘", "vault에 넣어줘", "save this", "export to vault"
 
+### fluent-korean-review
+
+Check existing Korean prose (vault docs, specs, pasted text) against the [fluent-korean](https://github.com/blackironj/fluent-korean) output-style rules and fix the violations in place.
+
+- Loads the rule file in full from `~/.claude/output-styles/fluent-korean.md` rather than a summary
+- Reports each violation with location, before → after, and the clause it breaks
+- Change-rate gate: warns over 30%, restores the original over 50%
+- Triggers: `/fluent-korean-review <file>`, "fluent-korean 규칙으로 검토", "한국어 문장 점검해줘"
+
 ## Requirements
 
 - Python 3.10+
@@ -67,6 +76,7 @@ cp -r skills/recall ~/.claude/skills/
 cp -r skills/sync-claude-sessions ~/.claude/skills/
 cp -r skills/save-doc ~/.claude/skills/
 cp -r skills/ideate ~/.claude/skills/
+cp -r skills/fluent-korean-review ~/.claude/skills/
 cp skills/shared_utils.py ~/.claude/skills/
 ```
 
