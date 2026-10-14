@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""Recall sessions by date from native Claude Code JSONL files.
+"""Recall sessions by date from the Obsidian vault session archive.
 
 Usage:
-    recall-day.py list DATE_EXPR [--project PATH] [--all-projects] [--min-msgs N]
-    recall-day.py expand SESSION_ID [--project PATH] [--all-projects] [--max-msgs N]
+    recall-day.py list DATE_EXPR [--name PROJECT] [--min-msgs N]
+    recall-day.py expand SESSION_ID [--max-msgs N]
+    recall-day.py projects
+    recall-day.py handoffs [--name TEXT] [--limit N]
 
 DATE_EXPR examples: yesterday, today, 2026-02-25, "last tuesday", "this week",
                     "last week", "3 days ago", "last 3 days"
 
-Every Claude Code user has JSONL session files in ~/.claude/projects/.
-No custom setup needed.
+Reads $VAULT_SESSIONS_DIR recursively (top level and YYYY/MM archive folders),
+so sessions from every synced machine and beyond local JSONL retention are visible.
+`handoffs` lists save-doc session handoffs under $DOCS_DIR/**/_session-handoff/, newest first.
 """
 
 import argparse
-import json
 import os
 import re
 import sys
@@ -22,95 +24,66 @@ from pathlib import Path
 
 # Add scripts dir to path for common module
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import STRIP_PATTERNS, clean_content, extract_text, local_tz as _local_tz, parse_frontmatter_file, parse_iso_timestamp, derive_title
+from common import local_tz as _local_tz, parse_frontmatter, parse_frontmatter_file, parse_iso_timestamp
 
-CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
 VAULT_SESSIONS_DIR = os.environ.get('VAULT_SESSIONS_DIR', '')
 VAULT_DIR = os.environ.get('VAULT_DIR', '')
-OBSIDIAN_SESSIONS = Path(VAULT_SESSIONS_DIR) if VAULT_SESSIONS_DIR else (Path(VAULT_DIR) / "Claude-Sessions" if VAULT_DIR else None)
+SESSIONS_DIR = Path(VAULT_SESSIONS_DIR) if VAULT_SESSIONS_DIR else (Path(VAULT_DIR) / "Claude-Sessions" if VAULT_DIR else None)
+SESSION_FILE_RE = re.compile(r'^(\d{4}-\d{2}-\d{2})-[0-9a-f]+$')
 
 
-def build_project_index() -> dict[Path, str]:
-    """Build project_dir -> project_name mapping from JSONL cwd fields.
-
-    Reads the first record of the most recent JSONL in each project directory
-    to extract the cwd, then uses Path(cwd).name as the project name.
-    """
-    index = {}
-    if not CLAUDE_PROJECTS.is_dir():
-        return index
-    for proj_dir in CLAUDE_PROJECTS.iterdir():
-        if not proj_dir.is_dir():
-            continue
-        jsonl_files = sorted(proj_dir.glob("*.jsonl"),
-                           key=lambda f: f.stat().st_mtime, reverse=True)
-        for jf in jsonl_files[:1]:
-            try:
-                with open(jf) as f:
-                    for line in f:
-                        obj = json.loads(line)
-                        cwd = obj.get("cwd")
-                        if cwd:
-                            index[proj_dir] = Path(cwd).name
-                            break
-            except (OSError, json.JSONDecodeError):
-                continue
-    return index
+def iter_session_files():
+    """Yield (date_str, path) for every session markdown file in the vault."""
+    if not SESSIONS_DIR or not SESSIONS_DIR.is_dir():
+        print("Error: VAULT_SESSIONS_DIR is not set or missing. Run '. ~/.claude/env' first.", file=sys.stderr)
+        sys.exit(1)
+    for md_file in SESSIONS_DIR.rglob("*.md"):
+        m = SESSION_FILE_RE.match(md_file.stem)
+        if m:
+            yield m.group(1), md_file
 
 
-def scan_obsidian_sessions(date_start: datetime, date_end: datetime, project_name: str | None = None) -> list[dict]:
-    """Scan Obsidian Claude-Sessions for the given date range. Returns session metadata list."""
-    if not OBSIDIAN_SESSIONS or not OBSIDIAN_SESSIONS.exists():
-        return []
+def projects_of(fm: dict) -> list[str]:
+    projects = fm.get('projects', [])
+    return projects if isinstance(projects, list) else []
 
+
+def scan_sessions(date_start: datetime, date_end: datetime, project_name: str | None) -> list[dict]:
+    """Collect session metadata whose filename date falls in [date_start, date_end)."""
+    first, last = date_start.strftime('%Y-%m-%d'), (date_end - timedelta(days=1)).strftime('%Y-%m-%d')
     sessions = []
-    # Generate date patterns for the range
-    current = date_start.date() if hasattr(date_start, 'date') else date_start
-    end = date_end.date() if hasattr(date_end, 'date') else date_end
+    for date_str, md_file in iter_session_files():
+        if not first <= date_str <= last:
+            continue
+        try:
+            content = md_file.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            continue
+        fm = parse_frontmatter(content)
+        if not fm:
+            continue
+        projects = projects_of(fm)
+        if project_name and not any(project_name.lower() in p.lower() for p in projects):
+            continue
 
-    while current < end:
-        date_str = current.strftime('%Y-%m-%d')
-        for md_file in OBSIDIAN_SESSIONS.glob(f"{date_str}-*.md"):
-            fm = parse_frontmatter_file(md_file)
-            if not fm:
-                continue
-
-            # Project name filter
-            if project_name:
-                fm_projects = fm.get('projects', [])
-                if not isinstance(fm_projects, list):
-                    fm_projects = []
-                if not any(project_name.lower() in p.lower() for p in fm_projects):
-                    continue
-
-            session_id = fm.get('session_id', md_file.stem.split('-', 3)[-1] if '-' in md_file.stem else md_file.stem)
-            title = fm.get('title', 'Untitled')
-            messages = fm.get('messages', 0)
-            last_activity = fm.get('last_activity', '')
-
-            # Parse time from last_activity or filename date
-            start_time = None
-            if last_activity:
-                try:
-                    start_time = parse_iso_timestamp(last_activity, _local_tz())
-                except (ValueError, TypeError):
-                    pass
-            if not start_time:
-                start_time = datetime(current.year, current.month, current.day, tzinfo=_local_tz())
-
-            sessions.append({
-                'session_id': session_id,
-                'start_time': start_time,
-                'user_msg_count': messages if isinstance(messages, int) else 0,
-                'file_size': md_file.stat().st_size,
-                'title': title[:80] if title else 'Untitled',
-                'filepath': str(md_file),
-                'source': 'remote',
-            })
-
-        current += timedelta(days=1)
-
+        last_activity = None
+        if fm.get('last_activity'):
+            try:
+                last_activity = parse_iso_timestamp(str(fm['last_activity']), _local_tz())
+            except (ValueError, TypeError):
+                pass
+        sessions.append({
+            'session_id': str(fm.get('session_id') or md_file.stem.split('-')[-1]),
+            'date': date_str,
+            'last_activity': last_activity,
+            # frontmatter `messages` also counts tool results; user turns are the `### User` headings
+            'user_msg_count': content.count('\n### User\n'),
+            'title': str(fm.get('title') or 'Untitled')[:80],
+            'projects': projects,
+            'machine': str(fm.get('machine') or ''),
+        })
     return sessions
+
 
 DAY_NAMES = {
     'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3,
@@ -183,174 +156,18 @@ def parse_date_expr(expr: str) -> tuple[datetime, datetime]:
     sys.exit(1)
 
 
-def get_project_dirs(project_path: str | None, all_projects: bool, name: str | None = None) -> list[Path]:
-    """Get list of project directories to scan.
-
-    Args:
-        project_path: Exact project path (existing --project flag)
-        all_projects: Scan all projects
-        name: Project name substring filter (new --name flag)
-    """
-    if project_path and name:
-        print("Error: --project and --name cannot be used together.", file=sys.stderr)
-        sys.exit(1)
-
-    if project_path:
-        encoded = project_path.replace('/', '-')
-        p = CLAUDE_PROJECTS / encoded
-        if p.exists():
-            return [p]
-        # Try as-is
-        p = Path(project_path)
-        if p.exists():
-            return [p]
-        print(f"Error: Project path not found: {project_path}", file=sys.stderr)
-        sys.exit(1)
-
-    if name:
-        index = build_project_index()
-        matched = [d for d, pname in index.items() if name.lower() in pname.lower()]
-        if not matched:
-            print(f"Error: No project matching '{name}'.", file=sys.stderr)
-            print("Run 'recall-day.py projects' to see available projects.", file=sys.stderr)
-            sys.exit(1)
-        return matched
-
-    # Default: scan all projects
-    return [d for d in CLAUDE_PROJECTS.iterdir() if d.is_dir()]
-
-
-def scan_session_metadata(filepath: Path, date_start: datetime, date_end: datetime) -> dict | None:
-    """Fast scan: read first ~30 lines for metadata, count user messages."""
-    session_id = filepath.stem
-    start_time = None
-    first_user_msg = None
-    user_msg_count = 0
-    file_size = filepath.stat().st_size
-
-    try:
-        with open(filepath) as f:
-            for i, line in enumerate(f):
-                try:
-                    obj = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-
-                # Get session ID from data if available
-                if obj.get('sessionId'):
-                    session_id = obj['sessionId']
-
-                ts_str = obj.get('timestamp')
-                if ts_str and not start_time:
-                    try:
-                        start_time = parse_iso_timestamp(ts_str, _local_tz())
-                    except (ValueError, TypeError):
-                        pass
-
-                # Count user messages and capture first
-                if obj.get('type') == 'user' and obj.get('message', {}).get('role') == 'user':
-                    user_msg_count += 1
-                    if first_user_msg is None:
-                        raw = extract_text(obj['message'].get('content', ''))
-                        cleaned = clean_content(raw)
-                        if cleaned and len(cleaned) >= 5:
-                            # Skip pure slash commands and skill instructions
-                            if re.match(r'^/\w+\s*$', cleaned):
-                                continue
-                            if cleaned.startswith('Base directory for this skill:'):
-                                continue
-                            first_user_msg = cleaned
-
-                # Early exit: if we have start_time and it's outside range, skip
-                if start_time and i < 5:
-                    if start_time >= date_end or start_time < date_start - timedelta(days=1):
-                        return None
-
-    except (OSError, UnicodeDecodeError):
-        return None
-
-    if not start_time:
-        return None
-
-    # Final date check
-    if start_time < date_start or start_time >= date_end:
-        return None
-
-    # Derive title from first message
-    title = derive_title([first_user_msg] if first_user_msg else [])
-
-    return {
-        'session_id': session_id,
-        'start_time': start_time,
-        'user_msg_count': user_msg_count,
-        'file_size': file_size,
-        'title': title,
-        'filepath': str(filepath),
-    }
-
-
-def format_size(size_bytes: int) -> str:
-    """Format file size human-readable."""
-    if size_bytes < 1024:
-        return f"{size_bytes}B"
-    elif size_bytes < 1024 * 1024:
-        return f"{size_bytes / 1024:.0f}KB"
-    else:
-        return f"{size_bytes / (1024 * 1024):.1f}MB"
-
-
 def cmd_list(args):
     """List sessions for a date range."""
     date_start, date_end = parse_date_expr(args.date_expr)
-    if getattr(args, 'full_history', False):
+    if args.full_history:
         date_start = datetime(2020, 1, 1, tzinfo=_local_tz())
         date_end = datetime.now(_local_tz()) + timedelta(days=1)
-    project_dirs = get_project_dirs(args.project, args.all_projects, getattr(args, 'name', None))
 
-    sessions = []
-    noise_count = 0
-    total_scanned = 0
+    sessions = scan_sessions(date_start, date_end, args.name)
+    noise_count = sum(1 for s in sessions if s['user_msg_count'] < args.min_msgs)
+    sessions = [s for s in sessions if s['user_msg_count'] >= args.min_msgs]
+    sessions.sort(key=lambda s: (s['date'], s['last_activity'] or datetime.min.replace(tzinfo=_local_tz())))
 
-    # 1. Local JSONL scan (primary, fast)
-    for proj_dir in project_dirs:
-        jsonl_files = list(proj_dir.glob("*.jsonl"))
-        total_scanned += len(jsonl_files)
-
-        for filepath in jsonl_files:
-            # Coarse filter: mtime must be within range (with 1 day buffer)
-            try:
-                mtime = datetime.fromtimestamp(filepath.stat().st_mtime, tz=_local_tz())
-                if mtime < date_start - timedelta(days=1):
-                    continue
-            except OSError:
-                continue
-
-            meta = scan_session_metadata(filepath, date_start, date_end)
-            if meta is None:
-                continue
-
-            meta['source'] = 'local'
-
-            if meta['user_msg_count'] < args.min_msgs:
-                noise_count += 1
-                continue
-
-            sessions.append(meta)
-
-    # 2. Obsidian scan (supplementary — catches sessions from other computers)
-    local_ids = {s['session_id'][:8] for s in sessions}
-    obsidian_sessions = scan_obsidian_sessions(date_start, date_end, getattr(args, 'name', None))
-    remote_count = 0
-    for obs in obsidian_sessions:
-        obs_id_short = obs['session_id'][:8]
-        if obs_id_short not in local_ids:
-            if obs['user_msg_count'] >= args.min_msgs:
-                sessions.append(obs)
-                remote_count += 1
-
-    sessions.sort(key=lambda s: s['start_time'])
-
-    # Format date range for header
     if date_end - date_start <= timedelta(days=1):
         header_date = date_start.strftime('%Y-%m-%d (%A)')
     else:
@@ -364,178 +181,57 @@ def cmd_list(args):
             print(f"({noise_count} filtered as noise, try --min-msgs 1)")
         return
 
-    # Print table
-    has_remote = any(s.get('source') == 'remote' for s in sessions)
-    if has_remote:
-        print(f" {'#':>2}  {'Time':5}  {'Msgs':>4}  {'Size':>6}  {'Src':6}  First Message")
-        print(f" {'--':>2}  {'-----':5}  {'----':>4}  {'------':>6}  {'------':6}  -------------")
-    else:
-        print(f" {'#':>2}  {'Time':5}  {'Msgs':>4}  {'Size':>6}  First Message")
-        print(f" {'--':>2}  {'-----':5}  {'----':>4}  {'------':>6}  -------------")
-
+    print(f" {'#':>3}  {'Date':10}  {'Last':5}  {'Msgs':>4}  {'Machine':12}  {'Project':18}  Title")
+    print(f" {'---':>3}  {'-' * 10}  {'-----':5}  {'----':>4}  {'-' * 12}  {'-' * 18}  -----")
     for i, s in enumerate(sessions, 1):
-        time_str = s['start_time'].strftime('%H:%M')
-        size_str = format_size(s['file_size'])
-        title = s['title'][:60]
-        if has_remote:
-            src = 'remote' if s.get('source') == 'remote' else 'local'
-            print(f" {i:2}  {time_str}  {s['user_msg_count']:4}  {size_str:>6}  {src:6}  {title}")
-        else:
-            print(f" {i:2}  {time_str}  {s['user_msg_count']:4}  {size_str:>6}  {title}")
+        last = s['last_activity'].strftime('%H:%M') if s['last_activity'] else '--:--'
+        project = ','.join(s['projects'])[:18]
+        print(f" {i:3}  {s['date']}  {last}  {s['user_msg_count']:4}  {s['machine'][:12]:12}  {project:18}  {s['title'][:60]}")
 
     print(f"\n{len(sessions)} sessions", end="")
-    if remote_count:
-        print(f" ({remote_count} remote)", end="")
     if noise_count:
         print(f" ({noise_count} filtered as noise)", end="")
     print()
 
-    # Print session IDs for expand
-    print(f"\nSession IDs (for expand):")
+    print("\nSession IDs (for expand):")
     for i, s in enumerate(sessions, 1):
-        print(f"  {i:2}. {s['session_id'][:8]}")
-
-
-def find_obsidian_session(session_id_prefix: str) -> Path | None:
-    """Find an Obsidian session markdown file by session ID prefix."""
-    if not OBSIDIAN_SESSIONS or not OBSIDIAN_SESSIONS.exists():
-        return None
-    for md_file in OBSIDIAN_SESSIONS.glob(f"*-{session_id_prefix}*.md"):
-        return md_file
-    # Also try broader match
-    for md_file in OBSIDIAN_SESSIONS.glob("*.md"):
-        if session_id_prefix in md_file.stem:
-            return md_file
-    return None
+        print(f"  {i:3}. {s['session_id'][:8]}")
 
 
 def cmd_expand(args):
-    """Expand a session by ID - show conversation summary."""
-    project_dirs = get_project_dirs(args.project, args.all_projects)
+    """Print a session's markdown body (frontmatter stripped), capped at --max-msgs user turns."""
     target_id = args.session_id.lower()
-
-    # Find the JSONL file
-    target_file = None
-    for proj_dir in project_dirs:
-        for filepath in proj_dir.glob("*.jsonl"):
-            if filepath.stem.lower().startswith(target_id):
-                target_file = filepath
-                break
-        if target_file:
-            break
-
-    # Fallback to Obsidian if no local JSONL
-    if not target_file:
-        obs_file = find_obsidian_session(target_id)
-        if obs_file:
-            print(f"\nSession: {obs_file.stem} (remote — from Obsidian)")
-            print(f"File: {obs_file}")
-            print()
-            # Print markdown content (skip frontmatter)
-            in_frontmatter = False
-            with open(obs_file, encoding='utf-8') as f:
-                for line in f:
-                    if line.strip() == '---' and not in_frontmatter:
-                        in_frontmatter = True
-                        continue
-                    if line.strip() == '---' and in_frontmatter:
-                        in_frontmatter = False
-                        continue
-                    if not in_frontmatter:
-                        print(line, end='')
-            return
+    target = next((f for _, f in iter_session_files() if f.stem.split('-')[-1].startswith(target_id[:8])), None)
+    if not target:
         print(f"Error: No session found matching '{args.session_id}'", file=sys.stderr)
         sys.exit(1)
 
-    print(f"\nSession: {target_file.stem}")
-    print(f"File: {target_file}")
-    print()
+    print(f"\nSession: {target.stem}")
+    print(f"File: {target}\n")
 
-    msg_count = 0
-    max_msgs = args.max_msgs
+    text = target.read_text(encoding='utf-8')
+    if text.startswith('---'):
+        end = text.find('\n---', 3)
+        if end != -1:
+            text = text[end + 4:]
 
-    with open(target_file) as f:
-        for line in f:
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-            msg_type = obj.get('type')
-            msg = obj.get('message', {})
-            role = msg.get('role')
-            ts_str = obj.get('timestamp', '')
-
-            # Format timestamp
-            ts_label = ''
-            if ts_str:
-                try:
-                    dt = parse_iso_timestamp(ts_str, _local_tz())
-                    ts_label = dt.strftime('%H:%M')
-                except (ValueError, TypeError):
-                    pass
-
-            if msg_type == 'user' and role == 'user':
-                raw = extract_text(msg.get('content', ''))
-                cleaned = clean_content(raw)
-                if not cleaned or len(cleaned) < 5:
-                    continue
-                if re.match(r'^/\w+\s*$', cleaned):
-                    continue
-
-                msg_count += 1
-                if max_msgs and msg_count > max_msgs:
-                    print(f"\n... truncated at {max_msgs} messages (use --max-msgs to show more)")
-                    break
-
-                # Truncate long messages
-                display = cleaned
-                if len(display) > 200:
-                    display = display[:197] + '...'
-                display = display.replace('\n', '\n    ')
-
-                print(f"[{ts_label}] USER: {display}")
-
-            elif msg_type == 'assistant' and role == 'assistant':
-                content = msg.get('content', [])
-                if isinstance(content, list):
-                    for block in content:
-                        if isinstance(block, dict):
-                            if block.get('type') == 'text':
-                                text = block.get('text', '')
-                                first_line = text.split('\n')[0][:120]
-                                if first_line.strip():
-                                    print(f"  [{ts_label}] ASST: {first_line}")
-                                break
-                            elif block.get('type') == 'tool_use':
-                                tool_name = block.get('name', '?')
-                                print(f"  [{ts_label}] TOOL: {tool_name}")
-
-    print(f"\n{msg_count} user messages total")
+    user_turns = 0
+    for line in text.splitlines():
+        if line.startswith('### User'):
+            user_turns += 1
+            if args.max_msgs and user_turns > args.max_msgs:
+                print(f"\n... truncated at {args.max_msgs} user messages (use --max-msgs to show more)")
+                break
+        print(line)
 
 
 def cmd_projects(args):
-    """List all known projects with session counts."""
-    # Local projects from JSONL
-    index = build_project_index()
+    """List all projects found in session frontmatter with session counts."""
     counts: dict[str, int] = {}
-    for proj_dir, pname in index.items():
-        jsonl_count = len(list(proj_dir.glob("*.jsonl")))
-        counts[pname] = counts.get(pname, 0) + jsonl_count
-
-    # Supplement with Obsidian (remote-only projects)
-    if OBSIDIAN_SESSIONS and OBSIDIAN_SESSIONS.exists():
-        local_projects = set(counts.keys())
-        for md_file in OBSIDIAN_SESSIONS.glob("*.md"):
-            fm = parse_frontmatter_file(md_file)
-            if not fm:
-                continue
-            fm_projects = fm.get('projects', [])
-            if not isinstance(fm_projects, list):
-                continue
-            for p in fm_projects:
-                if p not in local_projects:
-                    counts[p] = counts.get(p, 0) + 1
+    for _, md_file in iter_session_files():
+        fm = parse_frontmatter_file(md_file)
+        for p in projects_of(fm or {}):
+            counts[p] = counts.get(p, 0) + 1
 
     if not counts:
         print("No projects found.")
@@ -547,41 +243,65 @@ def cmd_projects(args):
     print(f"\n{len(counts)} projects total")
 
 
+def cmd_handoffs(args):
+    """List session handoffs, newest first, optionally filtered by folder/file/topic/project substring."""
+    docs_env = os.environ.get('DOCS_DIR')
+    if not docs_env or not Path(docs_env).is_dir():
+        print("Error: DOCS_DIR is not set or missing. Run '. ~/.claude/env' first.", file=sys.stderr)
+        sys.exit(1)
+    docs_dir = Path(docs_env)
+
+    rows = []
+    for md in docs_dir.rglob('_session-handoff/*-handoff.md'):
+        fm = parse_frontmatter_file(md) or {}
+        rel = md.relative_to(docs_dir).as_posix()
+        topic, project = str(fm.get('topic') or ''), str(fm.get('project') or '')
+        if args.name and not any(args.name.lower() in v.lower() for v in (rel, topic, project)):
+            continue
+        rows.append((md.name[:10], md.stat().st_mtime, rel, topic))
+
+    if not rows:
+        print("No session handoffs found." + (f" (filter: {args.name})" if args.name else ""))
+        return
+
+    rows.sort(key=lambda r: (r[0], r[1]), reverse=True)
+    print(f"\nSession handoffs in {docs_dir} (newest first)\n")
+    for date, _, rel, topic in rows[:args.limit]:
+        print(f" {date}  {rel}" + (f"  [topic: {topic}]" if topic else ""))
+    if len(rows) > args.limit:
+        print(f"\n... {len(rows) - args.limit} older (use --limit)")
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description='Recall sessions by date from Claude Code JSONL files',
+        description='Recall sessions by date from the Obsidian vault',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
     sub = parser.add_subparsers(dest='command', required=True)
 
-    # list
     p_list = sub.add_parser('list', help='List sessions for a date')
     p_list.add_argument('date_expr', nargs='*', help='Date expression (e.g. yesterday, today, 2026-02-25)')
-    p_list.add_argument('--project', help='Project path to scan')
-    p_list.add_argument('--all-projects', action='store_true', help='Scan all projects')
     p_list.add_argument('--min-msgs', type=int, default=3, help='Min user messages (default: 3)')
     p_list.add_argument('--name', help='Filter by project name (substring match)')
     p_list.add_argument('--full-history', action='store_true', dest='full_history', help='Show full history (use with --name)')
 
-    # expand
     p_expand = sub.add_parser('expand', help='Expand a session by ID')
     p_expand.add_argument('session_id', help='Session ID (prefix match)')
-    p_expand.add_argument('--project', help='Project path to scan')
-    p_expand.add_argument('--all-projects', action='store_true', help='Scan all projects')
-    p_expand.add_argument('--max-msgs', type=int, default=50, help='Max messages to show (default: 50)')
+    p_expand.add_argument('--max-msgs', type=int, default=50, help='Max user messages to show (default: 50)')
 
-    # projects
     sub.add_parser('projects', help='List all projects with session counts')
+
+    p_handoffs = sub.add_parser('handoffs', help='List session handoffs, newest first')
+    p_handoffs.add_argument('--name', help='Filter by folder, filename, topic, or project (substring)')
+    p_handoffs.add_argument('--limit', type=int, default=10, help='Max handoffs to show (default: 10)')
 
     args = parser.parse_args()
 
     if args.command == 'list':
-        # Join multi-word date expressions
         if args.date_expr:
             args.date_expr = ' '.join(args.date_expr)
         elif args.name:
-            # --name without date_expr defaults to last 14 days
             args.date_expr = 'last 14 days'
         elif args.full_history:
             args.date_expr = 'last 3650 days'
@@ -592,6 +312,8 @@ def main():
         cmd_expand(args)
     elif args.command == 'projects':
         cmd_projects(args)
+    elif args.command == 'handoffs':
+        cmd_handoffs(args)
 
 
 if __name__ == '__main__':

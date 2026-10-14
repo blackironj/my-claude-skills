@@ -24,32 +24,25 @@ Load context from previous sessions. Four modes:
 - **Temporal** (date-based): `/recall yesterday`, `/recall last week`
 - **Project** (filter by project): `/recall project triton yesterday`, `/recall projects`
 - **Topic** (BM25 search + Obsidian search fallback): `/recall authentication`, `/recall 인증 작업` ([ir](https://github.com/vlwkaos/ir) optional — falls back to Obsidian search)
-- **Graph** (visualization): `/recall graph last week` (requires networkx, pyvis)
+- **Handoff** (resume from a save-doc session handoff): `/recall handoff spec-auth`, "spec-auth 이어서 할 거 뭐 있지"
 
 Ends every recall with **One Thing** — the single highest-leverage next action.
 
 ### ideate
 
-Lightweight collaborative ideation. Alternative to superpowers:brainstorming for open-ended exploration.
+Lightweight collaborative ideation for open-ended exploration.
 
 - Natural dialogue, not process checklist
-- Triggers: `/ideate`, "같이 생각해보자", "이건 어때", "explore ideas"
+- Triggers: `/ideate`, "같이 생각해보자", "이건 어때", "어떻게 생각해", "explore ideas"
 
 ### save-doc
 
 Save session content (analysis, specs, designs) to Obsidian vault under `$DOCS_DIR`.
 
-- Auto-sets Obsidian properties (type, date, project) via CLI when available
+- Ranks target folders by matching the current repo to docs `project` frontmatter and folder names (`scripts/suggest-path.py`); proposes a new folder when nothing matches
+- Session handoff mode (`handoff.md`): saves next-session state to `<folder>/_session-handoff/` with a fixed structure and a paste-ready resume prompt
+- Writes Obsidian properties (`date`, `type`, `project`, `tags`) as YAML frontmatter
 - Triggers: `/save-doc`, "저장해줘", "vault에 넣어줘", "save this", "export to vault"
-
-### fluent-korean-review
-
-Check existing Korean prose (vault docs, specs, pasted text) against the [fluent-korean](https://github.com/blackironj/fluent-korean) output-style rules and fix the violations in place.
-
-- Loads the rule file in full from `~/.claude/output-styles/fluent-korean.md` rather than a summary
-- Reports each violation with location, before → after, and the clause it breaks
-- Change-rate gate: warns over 30%, restores the original over 50%
-- Triggers: `/fluent-korean-review <file>`, "fluent-korean 규칙으로 검토", "한국어 문장 점검해줘"
 
 ### fluent-korean-subagent hook
 
@@ -68,7 +61,6 @@ Register it in `~/.claude/settings.json` as shown in Step 3 below.
 - Obsidian vault (with Daily Notes core plugin enabled for daily note sync)
 - (Optional) Obsidian desktop with CLI enabled — for vault search fallback and property tagging
 - (Optional) [ir](https://github.com/vlwkaos/ir) for BM25 topic search — needs Rust 1.80+, `libclang-dev`, `cmake`
-- (Optional) `pip install networkx pyvis` for graph visualization
 
 ## Installation
 
@@ -86,7 +78,6 @@ cp -r skills/recall ~/.claude/skills/
 cp -r skills/sync-claude-sessions ~/.claude/skills/
 cp -r skills/save-doc ~/.claude/skills/
 cp -r skills/ideate ~/.claude/skills/
-cp -r skills/fluent-korean-review ~/.claude/skills/
 cp skills/shared_utils.py ~/.claude/skills/
 ```
 
@@ -110,7 +101,7 @@ EOF
 | `DOCS_DIR` | Where `/save-doc` writes documents |
 | `CLAUDE_SESSIONS_TZ` | Timezone for session timestamps (default: `Asia/Seoul`) |
 | `MACHINE_NAME` | Machine identifier in session frontmatter (optional) |
-| `OBSIDIAN_CLI` | Path to Obsidian desktop CLI (optional — enables daily notes, vault search, properties) |
+| `OBSIDIAN_CLI` | Path to Obsidian desktop CLI (optional — enables daily notes, vault search) |
 
 ### Step 3: Add hooks to `~/.claude/settings.json`
 
@@ -170,13 +161,13 @@ EOF
 
 ### Step 4: (Optional) Install ir for topic search
 
-[ir](https://github.com/vlwkaos/ir) enables BM25-based topic search with Korean support. Skip if you only need temporal recall.
+[ir](https://github.com/vlwkaos/ir) enables BM25-based topic search with Korean support. Skip if you only need temporal, project, and handoff recall.
 
 ```bash
-cargo install --git https://github.com/vlwkaos/ir --tag v0.11.0 --no-default-features --features llama-openmp  # Linux
-# cargo install --git https://github.com/vlwkaos/ir --tag v0.11.0  # macOS (Metal auto-detected)
+cargo install --git https://github.com/vlwkaos/ir --no-default-features --features llama-openmp  # Linux
+# cargo install --git https://github.com/vlwkaos/ir  # macOS (Metal auto-detected)
 
-# Korean preprocessor (cross-platform since v0.11.0)
+# Korean preprocessor (optional, for CJK search)
 ir preprocessor install ko
 
 # Register collection and build index
