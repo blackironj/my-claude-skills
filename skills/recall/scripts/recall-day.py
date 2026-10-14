@@ -24,7 +24,7 @@ from pathlib import Path
 
 # Add scripts dir to path for common module
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import local_tz as _local_tz, parse_frontmatter_file, parse_iso_timestamp
+from common import local_tz as _local_tz, parse_frontmatter, parse_frontmatter_file, parse_iso_timestamp
 
 VAULT_SESSIONS_DIR = os.environ.get('VAULT_SESSIONS_DIR', '')
 VAULT_DIR = os.environ.get('VAULT_DIR', '')
@@ -55,7 +55,11 @@ def scan_sessions(date_start: datetime, date_end: datetime, project_name: str | 
     for date_str, md_file in iter_session_files():
         if not first <= date_str <= last:
             continue
-        fm = parse_frontmatter_file(md_file)
+        try:
+            content = md_file.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            continue
+        fm = parse_frontmatter(content)
         if not fm:
             continue
         projects = projects_of(fm)
@@ -68,16 +72,15 @@ def scan_sessions(date_start: datetime, date_end: datetime, project_name: str | 
                 last_activity = parse_iso_timestamp(str(fm['last_activity']), _local_tz())
             except (ValueError, TypeError):
                 pass
-        messages = str(fm.get('messages', ''))
         sessions.append({
             'session_id': str(fm.get('session_id') or md_file.stem.split('-')[-1]),
             'date': date_str,
             'last_activity': last_activity,
-            'user_msg_count': int(messages) if messages.isdigit() else 0,
+            # frontmatter `messages` also counts tool results; user turns are the `### User` headings
+            'user_msg_count': content.count('\n### User\n'),
             'title': str(fm.get('title') or 'Untitled')[:80],
             'projects': projects,
             'machine': str(fm.get('machine') or ''),
-            'status': str(fm.get('status') or ''),
         })
     return sessions
 
