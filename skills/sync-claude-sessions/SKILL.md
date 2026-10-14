@@ -1,6 +1,6 @@
 ---
 name: sync-claude-sessions
-description: Sync Claude Code sessions to Obsidian markdown. Export, resume, add notes, close sessions. USE WHEN user says "sync sessions", "export sessions", "resume session", "add session note", "close session", "log session".
+description: Use when the user wants Claude Code sessions synced or exported to Obsidian, or wants to resume, annotate, or close a synced session. Triggers on "sync sessions", "export sessions", "resume session", "add session note", "close session", "log session".
 ---
 
 # Sync Claude Sessions

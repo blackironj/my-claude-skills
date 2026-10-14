@@ -18,9 +18,7 @@ Lightweight collaborative ideation. Explore through dialogue, not pipelines.
 
 ## When NOT to Use
 
-- Implementation intent ("구현하려는데", "만들자") → use superpowers:brainstorming
-- Clear spec exists → use superpowers:writing-plans
-- "작업 시작해", "구현해" → action, not exploration
+- Implementation intent ("구현하려는데", "만들자", "작업 시작해", "구현해") → act on it directly, not exploration
 
 ## Core Principle
 
@@ -62,7 +60,7 @@ Skip this for purely abstract topics.
 ## What NOT to Do
 
 - Do NOT create spec documents unless explicitly asked
-- Do NOT auto-transition to writing-plans or implementation
+- Do NOT auto-transition to planning or implementation
 - Do NOT force A/B/C choices when open dialogue fits
 - Do NOT run a checklist — this is a conversation
 - Do NOT ask rigid one-question-at-a-time sequences
