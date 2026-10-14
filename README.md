@@ -33,7 +33,7 @@ Ends every recall with **One Thing** — the single highest-leverage next action
 Lightweight collaborative ideation for open-ended exploration.
 
 - Natural dialogue, not process checklist
-- Triggers: `/ideate`, "같이 생각해보자", "이건 어때", "explore ideas"
+- Triggers: `/ideate`, "같이 생각해보자", "이건 어때", "어떻게 생각해", "explore ideas"
 
 ### save-doc
 
