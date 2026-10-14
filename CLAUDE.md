@@ -9,14 +9,12 @@ skills/
   ideate/SKILL.md                        — Lightweight collaborative ideation (markdown-only)
   recall/
     SKILL.md                             — Session recall skill
-    scripts/recall-day.py                — Temporal recall (date-based)
-    scripts/session-graph.py             — Graph visualization
+    scripts/recall-day.py                — Temporal/project recall from the vault session archive
     scripts/common.py                    — Shared recall utilities
-    workflows/recall.md                  — Routing logic and presentation rules
-  save-doc/SKILL.md                      — Save content to Obsidian vault (markdown-only)
-  fluent-korean-review/
-    SKILL.md                             — Check Korean prose against the fluent-korean rules
-    scripts/change_rate.py               — Change-rate gate (warn >30%, stop >50%)
+  save-doc/
+    SKILL.md                             — Save content to Obsidian vault
+    handoff.md                           — Session handoff mode: <folder>/_session-handoff/ + resume prompt
+    scripts/suggest-path.py              — Rank $DOCS_DIR folders for the current repo
   sync-claude-sessions/
     SKILL.md                             — Session export skill
     scripts/update-title.py              — Title update script
@@ -43,8 +41,8 @@ ln -s "$(pwd)/skills/"* ~/.claude/skills/
 
 | Type | Example | Contains |
 |------|---------|----------|
-| Markdown-only | ideate, save-doc | `SKILL.md` only |
-| Script-based | recall, sync-claude-sessions, fluent-korean-review | `SKILL.md` + `scripts/` (+ `workflows/`) |
+| Markdown-only | ideate | `SKILL.md` only |
+| Script-based | recall, save-doc, sync-claude-sessions | `SKILL.md` + `scripts/` (+ `workflows/` or reference `.md`) |
 
 ## CLI Commands
 
@@ -52,9 +50,9 @@ All scripts are invoked from their installed path: `. ~/.claude/env && python ~/
 
 - `claude-sessions {sync|export|resume|note|close|list|log}` — session management (`sync --daily-append` appends to Obsidian daily note)
 - `backfill-daily.py [--dry-run] [--date YYYY-MM-DD]` — backfill sessions into Obsidian daily notes
-- `recall-day.py` — date-based temporal recall
-- `session-graph.py` — graph visualization (needs `networkx`, `pyvis`)
-- Recall modes: temporal / project / topic (BM25 via `ir`, Obsidian search fallback) / graph
+- `recall-day.py {list|expand|projects|handoffs}` — date/project recall from `$VAULT_SESSIONS_DIR` (recursive, includes `YYYY/MM/` archives); `handoffs` lists `$DOCS_DIR/**/_session-handoff/`
+- `suggest-path.py [--cwd PATH]` — rank `$DOCS_DIR` folders as save-doc targets for the current repo
+- Recall modes: temporal / project / topic (BM25 via `ir`, Obsidian search fallback) / handoff
 
 ## Skill Conventions
 
@@ -92,7 +90,7 @@ Skills depend on `~/.claude/env` for vault paths:
 
 - **Daily Notes**: Stop hook appends session summary to `Daily Notes/YYYY-MM-DD.md` under `## Claude Sessions` section
 - **Obsidian Search**: Recall topic queries fall back to `$OBSIDIAN_CLI search` when ir is unavailable or results are sparse
-- **Properties**: save-doc can set Obsidian properties via `$OBSIDIAN_CLI property:set` after saving
+- **Properties**: save-doc writes Obsidian properties as YAML frontmatter (`tags` must be a list)
 - **Sessions Dashboard**: `sessions-dashboard.base` in Claude-Sessions folder provides database views (All / Active / By Project)
 
 ## Gotchas
