@@ -174,7 +174,7 @@ def _build_corpus_df() -> dict[str, int]:
     if not OUTPUT_DIR.exists():
         return df
     contents: list[str] = []
-    for f in OUTPUT_DIR.glob("*.md"):
+    for f in OUTPUT_DIR.rglob("*.md"):
         try:
             content = f.read_text(encoding="utf-8")
             conv_start = content.find("## Conversation")
@@ -207,7 +207,7 @@ def extract_keywords(conversation: list[dict], max_keywords: int = 3) -> list[st
 
     if _corpus_cache is None:
         _corpus_cache = _build_corpus_df()
-        _corpus_doc_count = max(len(list(OUTPUT_DIR.glob("*.md"))) if OUTPUT_DIR.exists() else 0, 1)
+        _corpus_doc_count = max(len(list(OUTPUT_DIR.rglob("*.md"))) if OUTPUT_DIR.exists() else 0, 1)
 
     scores: dict[str, float] = {}
     for word, count in tf.items():
@@ -245,7 +245,7 @@ def find_previous_session(session_date: str, session_id: str, project_name: str 
     if not OUTPUT_DIR.exists():
         return None
     candidates = []
-    for f in OUTPUT_DIR.glob("*.md"):
+    for f in OUTPUT_DIR.rglob("*.md"):
         if f.stem.endswith(short_id(session_id)):
             continue  # skip self
         fm = parse_frontmatter(f.read_text(encoding="utf-8"))
@@ -691,14 +691,14 @@ def find_session_file(session_id: str) -> Path | None:
     sid = short_id(session_id)
     if not OUTPUT_DIR.exists():
         return None
-    for f in OUTPUT_DIR.glob(f"*-{sid}.md"):
+    for f in OUTPUT_DIR.rglob(f"*-{sid}.md"):
         return f
     return None
 
 
 def get_output_path(session_id: str, date: str) -> Path:
-    """Get output file path: date-shortid.md"""
-    return OUTPUT_DIR / f"{date}-{short_id(session_id)}.md"
+    """Get output file path: YYYY/MM/date-shortid.md"""
+    return OUTPUT_DIR / date[:4] / date[5:7] / f"{date}-{short_id(session_id)}.md"
 
 
 def _spawn_title_gen(jsonl_path: str, md_path: str):
@@ -762,7 +762,7 @@ def sync_session(session_id: str, transcript_path: str | None = None, quiet: boo
 
     output_file = existing_file or get_output_path(session_id, data["date"])
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
     markdown = generate_markdown(data, session_id, existing_fm, my_notes)
 
     # File lock to prevent race condition between UserPromptSubmit and Stop hooks
@@ -926,7 +926,7 @@ def set_session_tags(session_id: str, tags: list[str]) -> bool:
 def get_session_files() -> list[tuple[Path, dict]]:
     """Get all session files with frontmatter, sorted by last activity."""
     sessions = []
-    for f in OUTPUT_DIR.glob("*.md"):
+    for f in OUTPUT_DIR.rglob("*.md"):
         try:
             content = f.read_text(encoding="utf-8")
             fm = parse_frontmatter(content)
@@ -1228,7 +1228,7 @@ def cmd_lint(args):
     # L001: Vault MD files without matching JSONL (orphan markdown)
     vault_sessions = {}
     if OUTPUT_DIR.exists():
-        for f in OUTPUT_DIR.glob("*.md"):
+        for f in OUTPUT_DIR.rglob("*.md"):
             fm = parse_frontmatter(f.read_text(encoding="utf-8"))
             sid = fm.get("session_id", "")
             if sid:

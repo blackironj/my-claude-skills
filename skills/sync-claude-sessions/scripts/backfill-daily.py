@@ -56,7 +56,7 @@ def format_session_line(stem: str, title: str, time_str: str, project: str | Non
 def scan_sessions(sessions_dir: Path) -> list[dict]:
     """Scan all session .md files and extract metadata."""
     sessions = []
-    for md_file in sorted(sessions_dir.glob("*.md")):
+    for md_file in sorted(sessions_dir.rglob("*.md")):
         try:
             content = md_file.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
