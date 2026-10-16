@@ -81,9 +81,8 @@ Skills depend on `~/.claude/env` for vault paths:
 
 ## Hooks
 
-- **UserPromptSubmit**: `claude-sessions sync` (10s timeout) — live session sync, skipped when `$CLAUDE_EFFORT=low`
-- **Stop**: `claude-sessions sync --daily-append` (15s timeout, async) — final sync + daily note append
-- **SessionEnd**: `index-sessions.sh` (5s timeout) — ir index update if available
+- **Stop**: `claude-sessions sync --daily-append` (30s timeout, async) — session sync + daily note append after every response
+- **SessionEnd**: `index-sessions.sh` (5s timeout, backgrounded) — final sync for an interrupted last turn, then ir index update if available. The hook JSON is piped in explicitly because `&` detaches stdin
 - **PreToolUse** (matcher `Agent`): `fluent-korean-subagent.py` (5s timeout) — when the subagent prompt is mostly Hangul, returns `updatedInput` with the body of `~/.claude/output-styles/fluent-korean.md` appended. Output styles never reach subagents; this hook is the only way the rules do. Fails open (exit 0, no output) on any error.
 
 ## Obsidian Integration
@@ -96,7 +95,7 @@ Skills depend on `~/.claude/env` for vault paths:
 ## Gotchas
 
 - **`docs/` is gitignored**: `docs/superpowers/`, `docs/specs/`, `docs/plans/` are local superpowers artifacts, not tracked.
-- **Sync hook timeout**: `UserPromptSubmit` + `Stop` hooks run `claude-sessions sync`. Lindera-tokenize calls are batched (commit `af7a5cf`) — don't reintroduce per-file subprocess loops.
+- **Sync must not scan the vault**: `claude-sessions sync` runs after every response, and the vault (`/mnt/c` under WSL, slow) grows by ~100 notes a month. Keep per-sync work bounded by the current session; get vault-wide data from the ir index instead of re-reading notes. A vault-wide TF-IDF keyword pass was removed for this reason.
 - **ir is optional but indexed via SessionEnd hook**: `hooks/index-sessions.sh` runs `ir update` only if `ir` is on PATH. Topic recall falls back to Obsidian search, then temporal mode.
 - **Daily note format**: `_daily_append()` writes directly to filesystem (not via Obsidian CLI) under `## Claude Sessions` heading. Same format as `backfill-daily.py`. Multi-project days are grouped by project.
 - **Session classification**: `session_type` frontmatter field auto-classifies as `interactive` or `automated` (regex on first user message).

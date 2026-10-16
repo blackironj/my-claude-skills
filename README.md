@@ -10,7 +10,6 @@ Export Claude Code conversations to Obsidian markdown with live sync via hooks.
 
 - Real-time session sync to `Claude-Sessions/` in your Obsidian vault
 - Frontmatter with metadata (date, title, skills, messages, status, tags, rating)
-- Korean + English keyword extraction for tags (via ir's Korean preprocessor)
 - `## My Notes` section preserved across syncs
 - Auto-appends session summary to Obsidian daily notes (`Daily Notes/YYYY-MM-DD.md`)
 - Backfill tool to populate daily notes from existing sessions
@@ -120,17 +119,6 @@ EOF
         ]
       }
     ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": ". ~/.claude/env && python ~/.claude/skills/sync-claude-sessions/scripts/claude-sessions sync",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "matcher": "",
@@ -138,7 +126,7 @@ EOF
           {
             "type": "command",
             "command": ". ~/.claude/env && python ~/.claude/skills/sync-claude-sessions/scripts/claude-sessions sync --daily-append",
-            "timeout": 15,
+            "timeout": 30,
             "async": true
           }
         ]
@@ -149,7 +137,7 @@ EOF
         "hooks": [
           {
             "type": "command",
-            "command": "nohup bash ~/.claude/hooks/index-sessions.sh >> ~/.claude/hooks/index-sessions.log 2>&1 &",
+            "command": "in=$(cat); printf '%s' \"$in\" | nohup bash ~/.claude/hooks/index-sessions.sh >> ~/.claude/hooks/index-sessions.log 2>&1 &",
             "timeout": 5
           }
         ]
