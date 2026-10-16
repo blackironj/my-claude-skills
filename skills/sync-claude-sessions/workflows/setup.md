@@ -35,17 +35,6 @@ Edit `~/.claude/settings.json` and add the hooks:
 ```json
 {
   "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": ". ~/.claude/env && python ~/.claude/skills/sync-claude-sessions/scripts/claude-sessions sync",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "matcher": "",
@@ -53,7 +42,7 @@ Edit `~/.claude/settings.json` and add the hooks:
           {
             "type": "command",
             "command": ". ~/.claude/env && python ~/.claude/skills/sync-claude-sessions/scripts/claude-sessions sync --daily-append",
-            "timeout": 15,
+            "timeout": 30,
             "async": true
           }
         ]
@@ -64,7 +53,7 @@ Edit `~/.claude/settings.json` and add the hooks:
         "hooks": [
           {
             "type": "command",
-            "command": "nohup bash ~/.claude/hooks/index-sessions.sh >> ~/.claude/hooks/index-sessions.log 2>&1 &",
+            "command": "in=$(cat); printf '%s' \"$in\" | nohup bash ~/.claude/hooks/index-sessions.sh >> ~/.claude/hooks/index-sessions.log 2>&1 &",
             "timeout": 5
           }
         ]
@@ -119,12 +108,12 @@ Then:
 # Test sync hook (should print "Synced: ..." or exit silently)
 echo '{}' | python ~/.claude/skills/sync-claude-sessions/scripts/claude-sessions sync
 
-# Test ir indexing (should update search index)
-bash ~/.claude/hooks/index-sessions.sh
+# Test SessionEnd hook (final sync + ir index update)
+echo '{}' | bash ~/.claude/hooks/index-sessions.sh
 ```
 
 ## What Gets Synced
 
-- **On every message (UserPromptSubmit/Stop):** Session metadata, skills used, artifacts created/modified, conversation
-- **On session end (SessionEnd):** ir index update for topic search via recall
+- **After every response (Stop):** Session metadata, skills used, artifacts created/modified, conversation
+- **On session end (SessionEnd):** final sync (covers an interrupted last turn), then ir index update for topic search via recall
 - **Preserved across syncs:** `## My Notes` section, `status`, `tags`, `rating`, `comments` fields

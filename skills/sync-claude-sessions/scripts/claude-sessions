@@ -15,7 +15,6 @@ import fcntl
 import json
 import os
 import re
-import shlex
 import subprocess
 import sys
 import time
@@ -35,188 +34,6 @@ from shared_utils import (  # noqa: E402
     parse_iso_timestamp, parse_frontmatter as shared_parse_frontmatter,
     parse_jsonl as shared_parse_jsonl, derive_title, short_id,
 )
-
-
-# English stop words for TF-IDF keyword extraction
-_STOP_WORDS = {
-    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "could",
-    "should", "may", "might", "can", "shall", "to", "of", "in", "for",
-    "on", "with", "at", "by", "from", "as", "into", "through", "during",
-    "before", "after", "above", "below", "between", "and", "but", "or",
-    "not", "no", "so", "if", "then", "than", "too", "very", "just",
-    "about", "up", "out", "this", "that", "it", "its", "my", "your",
-    "we", "they", "them", "he", "she", "me", "i", "you", "all", "each",
-    "which", "what", "when", "where", "how", "who", "whom", "there",
-    "here", "also", "more", "some", "any", "only", "other", "new",
-    "one", "two", "like", "use", "used", "using", "make", "get",
-    # Technical noise
-    "file", "code", "error", "true", "false", "null", "none",
-    "run", "test", "check", "see", "look", "want", "need",
-}
-
-
-def _find_ko_preprocessor() -> list[str] | None:
-    """Return argv for ir's registered Korean preprocessor.
-
-    Reads ir's config.yml (written by `ir preprocessor install ko`) so the
-    sync path tokenizes exactly the way the BM25 index does.
-    """
-    config_home = Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
-    config_path = config_home / "ir" / "config.yml"
-    try:
-        text = config_path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    block = re.search(r"^preprocessors:\s*\n((?:[ \t]+.+\n?)+)", text, re.MULTILINE)
-    if not block:
-        return None
-    for line in block.group(1).splitlines():
-        m = re.match(r"\s+ko:\s+(.+)$", line)
-        if not m:
-            continue
-        try:
-            # posix=False preserves literal quotes so the JSON `--token-filter`
-            # value survives intact as a single argv element.
-            return shlex.split(m.group(1), posix=False)
-        except ValueError:
-            return None
-    return None
-
-
-_KO_PREPROCESSOR = _find_ko_preprocessor()
-
-
-_KOREAN_RE = re.compile(r'[\uac00-\ud7af]')
-_WS_RE = re.compile(r'\s+')
-_EN_WORD_RE = re.compile(r'[a-zA-Z]{2,}')
-
-
-def _tokenize_korean_batch(texts: list[str]) -> list[list[str]]:
-    """Tokenize multiple texts via a single lindera subprocess call.
-
-    lindera preserves input-line to output-line 1:1 correspondence, so we
-    flatten each text to a single line (whitespace → space) and join with \\n.
-    Each text is mapped to its token list at the same index.
-
-    Per-call subprocess spawn was the sync hot-path bottleneck (~300ms × N).
-    """
-    if not _KO_PREPROCESSOR or not texts:
-        return [[] for _ in texts]
-
-    prepared: list[str] = []
-    has_korean: list[bool] = []
-    for t in texts:
-        if t and _KOREAN_RE.search(t):
-            prepared.append(_WS_RE.sub(' ', t).strip())
-            has_korean.append(True)
-        else:
-            prepared.append('')
-            has_korean.append(False)
-
-    if not any(has_korean):
-        return [[] for _ in texts]
-
-    try:
-        # Timeout scales with input size: 10s base + 1s per 100KB
-        total_bytes = sum(len(p.encode('utf-8')) for p in prepared)
-        timeout = 10 + total_bytes // 102400
-        result = subprocess.run(
-            _KO_PREPROCESSOR,
-            input='\n'.join(prepared),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-        if result.returncode != 0:
-            return [[] for _ in texts]
-        out_lines = result.stdout.split('\n')
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        return [[] for _ in texts]
-
-    results: list[list[str]] = []
-    for i, had_ko in enumerate(has_korean):
-        if not had_ko or i >= len(out_lines):
-            results.append([])
-            continue
-        tokens = out_lines[i].split()
-        results.append([t for t in tokens if len(t) > 1 and _KOREAN_RE.search(t)])
-    return results
-
-
-def _tokenize_korean(text: str) -> list[str]:
-    """Single-text wrapper for backward compatibility."""
-    return _tokenize_korean_batch([text])[0]
-
-
-def _tokenize(text: str) -> list[str]:
-    """Tokenize text into English + Korean keywords (single-text)."""
-    en_tokens = [w for w in _EN_WORD_RE.findall(text.lower())
-                 if w not in _STOP_WORDS]
-    ko_tokens = _tokenize_korean(text)
-    return en_tokens + ko_tokens
-
-
-def _tokenize_batch(texts: list[str]) -> list[list[str]]:
-    """Batch-tokenize multiple texts (en + ko). Single subprocess call for ko."""
-    ko_results = _tokenize_korean_batch(texts)
-    out: list[list[str]] = []
-    for text, ko in zip(texts, ko_results):
-        en = [w for w in _EN_WORD_RE.findall(text.lower()) if w not in _STOP_WORDS]
-        out.append(en + ko)
-    return out
-
-
-def _build_corpus_df() -> dict[str, int]:
-    """Build document frequency from existing session files in OUTPUT_DIR.
-    Returns dict mapping word -> number of documents containing it."""
-    df: dict[str, int] = {}
-    if not OUTPUT_DIR.exists():
-        return df
-    contents: list[str] = []
-    for f in OUTPUT_DIR.rglob("*.md"):
-        try:
-            content = f.read_text(encoding="utf-8")
-            conv_start = content.find("## Conversation")
-            if conv_start >= 0:
-                content = content[conv_start:]
-            contents.append(content)
-        except Exception:
-            contents.append("")
-    for tokens in _tokenize_batch(contents):
-        for w in set(tokens):
-            df[w] = df.get(w, 0) + 1
-    return df
-
-
-_corpus_cache: dict[str, int] | None = None
-_corpus_doc_count: int = 0
-
-
-def extract_keywords(conversation: list[dict], max_keywords: int = 3) -> list[str]:
-    """Extract top keywords using TF-IDF from conversation turns."""
-    import math
-    global _corpus_cache, _corpus_doc_count
-
-    tf: dict[str, int] = {}
-    for tokens in _tokenize_batch([turn["text"] for turn in conversation]):
-        for word in tokens:
-            tf[word] = tf.get(word, 0) + 1
-    if not tf:
-        return []
-
-    if _corpus_cache is None:
-        _corpus_cache = _build_corpus_df()
-        _corpus_doc_count = max(len(list(OUTPUT_DIR.rglob("*.md"))) if OUTPUT_DIR.exists() else 0, 1)
-
-    scores: dict[str, float] = {}
-    for word, count in tf.items():
-        word_tf = 1 + math.log(count)
-        word_idf = math.log(1 + _corpus_doc_count / (1 + _corpus_cache.get(word, 0)))
-        scores[word] = word_tf * word_idf
-
-    sorted_words = sorted(scores.items(), key=lambda x: -x[1])
-    return [w for w, _ in sorted_words[:max_keywords]]
 
 
 def extract_project_name(records: list[dict]) -> str | None:
@@ -361,7 +178,7 @@ def extract_session_data(records: list[dict]) -> dict:
         "skills": [],
         "messages": 0,
         "conversation": [],      # ordered (role, text) turns
-        "user_messages": [],     # derived later for keywords/title
+        "user_messages": [],     # derived later for title
         "last_timestamp": None,
         "files_created": [],
         "files_modified": [],
@@ -413,7 +230,7 @@ def extract_session_data(records: list[dict]) -> dict:
                 else:
                     data["conversation"].append({"role": "assistant", "text": combined})
 
-    # Derive user_messages from conversation for keywords/title
+    # Derive user_messages from conversation for title
     data["user_messages"] = [
         clean_text(turn["text"])
         for turn in data["conversation"] if turn["role"] == "user"
@@ -440,9 +257,6 @@ def extract_session_data(records: list[dict]) -> dict:
 
     # Extract project name from CWD
     data["project_name"] = extract_project_name(records)
-
-    # Extract keywords from user messages
-    data["keywords"] = extract_keywords(data["conversation"])
 
     # Detect if continuation session
     data["is_continuation"] = detect_continuation(records)
@@ -543,10 +357,7 @@ def generate_markdown(data: dict, session_id: str, existing_fm: dict | None = No
     lines.append(f"status: {status}")
 
     # Tags — auto tags are regenerated each sync, manual tags preserved
-    # Auto tags: "claude-session" + keywords (recalculated every sync)
     auto_tags = ["claude-session"]
-    keywords = data.get("keywords", [])
-    auto_tags.extend(keywords)
     # Manual tags: existing tags that aren't in old auto set (user-added)
     existing_tags = existing_fm.get("tags", []) if existing_fm else []
     if not isinstance(existing_tags, list):
@@ -610,7 +421,8 @@ def generate_markdown(data: dict, session_id: str, existing_fm: dict | None = No
     if project_name:
         link_parts.append(f"Project: [[{project_name}]]")
     if data.get("is_continuation"):
-        prev = find_previous_session(data["date"], session_id, project_name)
+        # Reuse the link from the existing note; finding it scans the whole vault
+        prev = data.get("prev_session") or find_previous_session(data["date"], session_id, project_name)
         if prev:
             link_parts.append(f"Prev: [[{prev}]]")
     if link_parts:
@@ -620,12 +432,7 @@ def generate_markdown(data: dict, session_id: str, existing_fm: dict | None = No
     if data["skills"]:
         lines.append("> Skills: " + " ".join(f"[[{s}]]" for s in sorted_skills))
 
-    # Topic wikilinks — cross-project clustering by keyword
-    keywords = data.get("keywords", [])
-    if keywords:
-        lines.append("> Topics: " + " ".join(f"[[{k}]]" for k in keywords))
-
-    if link_parts or data["skills"] or keywords:
+    if link_parts or data["skills"]:
         lines.append("")
 
     if data["summary"]:
@@ -759,13 +566,17 @@ def sync_session(session_id: str, transcript_path: str | None = None, quiet: boo
         content = existing_file.read_text(encoding="utf-8")
         existing_fm = parse_frontmatter(content)
         my_notes = extract_my_notes_section(content)
+        header = content.split("\n## ", 1)[0]
+        prev_link = re.search(r"^> .*Prev: \[\[([^\]]+)\]\]", header, re.MULTILINE)
+        if prev_link:
+            data["prev_session"] = prev_link.group(1)
 
     output_file = existing_file or get_output_path(session_id, data["date"])
 
     output_file.parent.mkdir(parents=True, exist_ok=True)
     markdown = generate_markdown(data, session_id, existing_fm, my_notes)
 
-    # File lock to prevent race condition between UserPromptSubmit and Stop hooks
+    # File lock to prevent race condition between Stop and SessionEnd hooks
     lock_path = Path(f"/tmp/claude-sync-{short_id(session_id)}.lock")
     try:
         lock_fd = open(lock_path, "w")
